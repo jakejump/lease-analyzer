@@ -1,0 +1,223 @@
+from langchain_community.document_loaders import PyPDFLoader
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_openai import OpenAIEmbeddings, ChatOpenAI
+from langchain_community.vectorstores import FAISS
+from langchain.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnablePassthrough
+from langchain_core.output_parsers import StrOutputParser
+from langchain.schema import Document
+from typing import List
+import re
+import json
+
+
+def extract_text_from_pdf(pdf_path: str) -> str:
+    loader = PyPDFLoader(pdf_path)
+    docs = loader.load()
+    return "\n".join(doc.page_content for doc in docs)
+
+
+def split_into_paragraphs_or_clauses(text: str) -> List[str]:
+    clause_pattern = re.compile(
+        r"(\n|^)(Section|Clause|Article)?\s*(\d{1,2}(\.\d{1,2})?)[\.:\)\-\s]+.*?(?=\n(Section|Clause|Article)?\s*\d{1,2}(\.\d{1,2})?[\.:\)\-\s]+|\Z)",
+        re.DOTALL | re.IGNORECASE
+    )
+
+    # Find all clause-like matches
+    matches = list(clause_pattern.finditer(text))
+    clauses = []
+    seen_numbers = set()
+
+    for i, match in enumerate(matches):
+        start = match.start()
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+        clause_text = text[start:end].strip()
+
+        # Extract clause number (e.g., 1, 1.1, 2)
+        clause_number_match = re.search(r"(\d{1,2}(\.\d{1,2})?)", match.group())
+        if clause_number_match:
+            clause_number = clause_number_match.group(1)
+            # Skip if out of order or already seen
+            if clause_number in seen_numbers:
+                continue
+            seen_numbers.add(clause_number)
+            clauses.append(clause_text)
+
+    # Fallback if pattern fails or results are too few/many
+    total_chars = len(text)
+    if len(clauses) < 7 or len(clauses) > max(100, total_chars // 200):
+        print("⚠️ Smart clause split failed, using paragraph fallback.")
+        paragraphs = [p.strip() for p in re.split(r'\n{2,}', text) if len(p.strip()) > 40]
+        return paragraphs
+        
+    print("clauses: ", clauses)
+
+    return clauses
+
+
+def load_lease_docs(pdf_path: str) -> List[Document]:
+    text = extract_text_from_pdf(pdf_path)
+    paragraphs = split_into_paragraphs_or_clauses(text)
+    return [Document(page_content=para, metadata={"index": i}) for i, para in enumerate(paragraphs)]
+
+
+def run_rag_pipeline(pdf_path, question):
+    chunks = load_lease_docs(pdf_path)
+    embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+    vectorstore = FAISS.from_documents(chunks, embeddings)
+    retriever = vectorstore.as_retriever(search_type="mmr", search_kwargs={"k": 6})
+
+    SYSTEM = """
+    You are a contract analyst reviewing a commercial lease agreement. Based on the provided context,
+    answer the user's question. Return your answer in plain English.
+    """
+
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", SYSTEM.strip()),
+        ("human", "Context:\n{context}\n\nQuestion: {question}")
+    ])
+
+    def format_docs(docs):
+        return "\n\n".join(doc.page_content for doc in docs)
+
+    llm = ChatOpenAI(model="gpt-4o", temperature=0)
+
+    rag_chain = (
+        {"context": retriever | format_docs, "question": RunnablePassthrough()}
+        | prompt
+        | llm
+        | StrOutputParser()
+    )
+
+    return rag_chain.invoke(question)
+
+
+def evaluate_general_risks(pdf_path):
+    chunks = load_lease_docs(pdf_path)
+    embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+    vectorstore = FAISS.from_documents(chunks, embeddings)
+    retriever = vectorstore.as_retriever(search_type="mmr", search_kwargs={"k": 12})
+
+    SYSTEM = """
+    You are a risk analyst evaluating a lease document. You are an analyst for a firm that is purchasing or puttng together commercial real-estate deals, so the risk should be from the perspective of the lessor. Based on the following context, score the lease across the following general risk categories from 1 (high risk) to 10 (low risk) and explain each score:
+
+    - Termination Risk
+    - Financial Exposure
+    - Legal Ambiguity
+    - Operational Complexity
+    - Assignment/Subletting Risk
+    - Renewal and Escalation Risk
+
+    Please return your result strictly in the following JSON format, and nothing else:
+
+    {{
+      "termination_risk": {{"score": int, "explanation": str}},
+      "financial_exposure": {{"score": int, "explanation": str}},
+      "legal_ambiguity": {{"score": int, "explanation": str}},
+      "operational_complexity": {{"score": int, "explanation": str}},
+      "assignment_subletting_risk": {{"score": int, "explanation": str}},
+      "renewal_escalation_risk": {{"score": int, "explanation": str}}
+    }}
+
+    Do not include any commentary or markdown — only valid JSON.
+    """
+
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", SYSTEM.strip()),
+        ("human", "Context:\n{context}\n\nEvaluate the lease risks.")
+    ])
+
+    def format_docs(docs):
+        return "\n\n".join(doc.page_content for doc in docs)
+
+    llm = ChatOpenAI(model="gpt-4o", temperature=0)
+
+    chain = (
+        {"context": retriever | format_docs, "question": RunnablePassthrough()}
+        | prompt
+        | llm
+        | StrOutputParser()
+    )
+
+    raw_output = chain.invoke("Evaluate the lease risks.")
+
+    try:
+        cleaned = raw_output.strip()
+        if cleaned.startswith("```json"):
+            cleaned = cleaned.removeprefix("```json").removesuffix("```")
+        result = json.loads(cleaned)
+        assert isinstance(result, dict)
+        return result
+    except Exception as e:
+        print("⚠️ LLM returned invalid JSON:\n", raw_output)
+        return {
+            "termination_risk": {"score": None, "explanation": "Could not parse response."},
+            "financial_exposure": {"score": None, "explanation": "Could not parse response."},
+            "legal_ambiguity": {"score": None, "explanation": "Could not parse response."},
+            "operational_complexity": {"score": None, "explanation": "Could not parse response."},
+            "assignment_subletting_risk": {"score": None, "explanation": "Could not parse response."},
+            "renewal_escalation_risk": {"score": None, "explanation": "Could not parse response."}
+        }
+        
+def detect_abnormalities(pdf_path):
+    chunks = load_lease_docs(pdf_path)
+    embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+    vectorstore = FAISS.from_documents(chunks, embeddings)
+    retriever = vectorstore.as_retriever(search_type="mmr", search_kwargs={"k": 12})
+
+    SYSTEM = """
+    You are an expert lease reviewer. Identify any unusual, uncommon, or non-standard clauses in this lease.
+    These may include non-standard financial penalties, strange renewal conditions, unexpected maintenance responsibilities, etc.
+    Only return items that deviate from common practice. If everything is normal, say: "No abnormalities found."
+
+    Return the output as a list of strings in JSON format, e.g.:
+    [
+      "Clause 7 requires the tenant to cover 100% of HVAC replacement costs, which is unusual.",
+      "Clause 12 allows the landlord to raise rent without notice during renewal, which is non-standard."
+    ]
+    """
+
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", SYSTEM.strip()),
+        ("human", "Context:\n{context}\n\nIdentify abnormalities.")
+    ])
+
+    def format_docs(docs):
+        return "\n\n".join(doc.page_content for doc in docs)
+
+    llm = ChatOpenAI(model="gpt-4o", temperature=0)
+    chain = (
+        {"context": retriever | format_docs, "question": RunnablePassthrough()}
+        | prompt
+        | llm
+        | StrOutputParser()
+    )
+
+    result = chain.invoke("Identify abnormalities in the lease.")
+    try:
+        return json.loads(result)
+    except Exception as e:
+        return ["Could not parse LLM response."]
+
+
+def get_clauses_for_topic(pdf_path, topic):
+    from sklearn.metrics.pairwise import cosine_similarity
+    import numpy as np
+
+    chunks = load_lease_docs(pdf_path)
+    embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+    vectorstore = FAISS.from_documents(chunks, embeddings)
+
+    topic_embedding = embeddings.embed_query(topic)
+    stored_embeddings = vectorstore.index.reconstruct_n(0, vectorstore.index.ntotal)
+    stored_docs = vectorstore.docstore._dict.values()
+
+    similarities = cosine_similarity([topic_embedding], stored_embeddings)[0]
+    doc_scores = list(zip(stored_docs, similarities))
+
+    threshold = 0.65
+    filtered = [(doc, score) for doc, score in doc_scores if score >= threshold]
+    if not filtered:
+        filtered = sorted(doc_scores, key=lambda x: x[1], reverse=True)[:3]
+
+    return [f"Score {round(score, 3)} → {doc.page_content.strip()}" for doc, score in filtered]
