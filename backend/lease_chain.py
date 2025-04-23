@@ -147,6 +147,7 @@ def evaluate_general_risks(pdf_path):
             cleaned = cleaned.removeprefix("```json").removesuffix("```")
         result = json.loads(cleaned)
         assert isinstance(result, dict)
+        print("risks", result)
         return result
     except Exception as e:
         print("⚠️ LLM returned invalid JSON:\n", raw_output)
