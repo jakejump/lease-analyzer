@@ -18,6 +18,8 @@ app.add_middleware(
 
 @app.post("/upload")
 async def upload_file(file: UploadFile = File(...)):
+    import os
+    os.makedirs("temp", exist_ok=True)
     with open("temp/lease.pdf", "wb") as f:
         shutil.copyfileobj(file.file, f)
     risks = evaluate_general_risks("temp/lease.pdf")
