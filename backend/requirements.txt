@@ -5,8 +5,8 @@ faiss-cpu==1.10.0
 pypdf==5.4.0
 python-multipart==0.0.9
 
-langchain==0.1.16
-langchain-core==0.1.43
-langchain-openai==0.0.8
-langchain-community==0.0.36
-langchain-text-splitters==0.0.1
+langchain==0.1.17
+langchain-core==0.1.49
+langchain-openai==0.0.9
+langchain-community==0.0.37
+langchain-text-splitters==0.0.2
