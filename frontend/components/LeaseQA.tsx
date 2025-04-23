@@ -1,13 +1,18 @@
 import { useState } from 'react';
 import axios from 'axios';
 
+interface RiskAssessment {
+  score: number | null;
+  explanation: string;
+}
+
 export default function LeaseQA() {
     const [file, setFile] = useState<File | null>(null);
-    const [question, setQuestion] = useState("");
-    const [response, setResponse] = useState<any>(null);
-    const [risks, setRisks] = useState<any>(null);
-    const [loading, setLoading] = useState(false);
-    const [evaluating, setEvaluating] = useState(false);
+    const [question, setQuestion] = useState<string>("");
+    const [response, setResponse] = useState<string | null>(null);
+    const [risks, setRisks] = useState<Record<string, RiskAssessment> | null>(null);
+    const [loading, setLoading] = useState<boolean>(false);
+    const [evaluating, setEvaluating] = useState<boolean>(false);
     const [clauseContext, setClauseContext] = useState<Record<string, string[]>>({});
     const [loadingClauses, setLoadingClauses] = useState<string | null>(null);
 
@@ -22,7 +27,7 @@ export default function LeaseQA() {
                 ? JSON.parse(res.data.risks)
                 : res.data.risks;
             setRisks(parsed);
-        } catch (err) {
+        } catch {
             console.error("Failed to parse risks JSON:", res.data.risks);
             setRisks({});
         } finally {
@@ -88,7 +93,7 @@ export default function LeaseQA() {
                     <div className="bg-gray-800 p-4 rounded shadow animate-fade-in">
                         <h2 className="text-lg font-semibold mb-4">Risk Evaluation</h2>
                         <ul className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {Object.entries(risks).map(([category, val]: any) => {
+                            {Object.entries(risks).map(([category, val]) => {
                                 const [start, end] = getRiskGradient(val.score);
                                 const isLoading = loadingClauses === category;
                                 const clauses = clauseContext[category] || [];
