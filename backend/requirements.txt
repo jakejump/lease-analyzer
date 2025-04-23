@@ -4,7 +4,7 @@ faiss-cpu
 pypdf
 python-multipart
 
-openai==1.16.0
+openai==1.25.0
 langchain==0.1.17
 langchain-core==0.1.48
 langchain-community==0.0.36
