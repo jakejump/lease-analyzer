@@ -6,12 +6,14 @@ import shutil, os
 
 app = FastAPI()
 
+from fastapi.middleware.cors import CORSMiddleware
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["lease-analyzer-7og7.vercel.app"],  # Change to your frontend URL later
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["lease-analyzer-7og7.vercel.app"],
+    allow_headers=["lease-analyzer-7og7.vercel.app"],
 )
 
 @app.post("/upload")
