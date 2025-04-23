@@ -21,7 +21,7 @@ export default function LeaseQA() {
         setEvaluating(true);
         const formData = new FormData();
         formData.append("file", file);
-        const res = await axios.post("http://localhost:8000/upload", formData);
+        const res = await axios.post("https://lease-analyzer-c2i4.onrender.com/upload", formData);
         try {
             const parsed = typeof res.data.risks === "string"
                 ? JSON.parse(res.data.risks)
@@ -39,7 +39,7 @@ export default function LeaseQA() {
         setLoading(true);
         const formData = new FormData();
         formData.append("question", question);
-        const res = await axios.post("http://localhost:8000/ask", formData);
+        const res = await axios.post("https://lease-analyzer-c2i4.onrender.com/ask", formData);
         setResponse(res.data.answer);
         setLoading(false);
     };
@@ -57,7 +57,7 @@ export default function LeaseQA() {
         setLoadingClauses(topic);
         const formData = new FormData();
         formData.append("topic", topic);
-        const res = await axios.post("http://localhost:8000/clauses", formData);
+        const res = await axios.post("https://lease-analyzer-c2i4.onrender.com/clauses", formData);
         setClauseContext(prev => ({ ...prev, [topic]: res.data.clauses || [] }));
         setLoadingClauses(null);
     };
