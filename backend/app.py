@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["lease-analyzer-7og7.vercel.app"],  # Change to your frontend URL later
+    allow_origins=["https://lease-analyzer-7og7.vercel.app"],  # Change to your frontend URL later
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
