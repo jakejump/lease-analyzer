@@ -163,16 +163,28 @@ export default function LeaseQA() {
                 </div>
 
                 {response && (
-                    <div className="bg-gray-800 p-4 mt-4 rounded whitespace-pre-wrap animate-fade-in">
-                        <pre>{response}</pre>
-                        <button
-                            onClick={() => handleShowClauses(question)}
-                            className="mt-2 text-sm text-blue-400 underline"
-                        >
-                            Show Clauses
-                        </button>
-                    </div>
-                )}
+  <div className="bg-gray-800 p-4 mt-4 rounded whitespace-pre-wrap animate-fade-in">
+    <pre className="text-white">{response}</pre>
+    <button
+      onClick={() => handleShowClauses("user_question")}
+      className="mt-2 text-sm text-blue-400 underline"
+      disabled={loadingClauses === "user_question"}
+    >
+      {loadingClauses === "user_question" ? "Gathering Clauses..." : clauseContext["user_question"]?.length > 0 ? "Hide Clauses" : "Show Clauses"}
+    </button>
+
+    {clauseContext["user_question"]?.length > 0 && (
+      <div className="mt-4 text-sm text-gray-300">
+        <strong className="block mb-1">Relevant Clauses:</strong>
+        <ul className="list-disc pl-5 space-y-1">
+          {clauseContext["user_question"].map((text, idx) => (
+            <li key={idx}>{text}</li>
+          ))}
+        </ul>
+      </div>
+    )}
+  </div>
+)}
             </div>
 
             <style jsx global>{`
