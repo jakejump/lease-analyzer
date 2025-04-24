@@ -3,6 +3,7 @@ uvicorn
 faiss-cpu
 pypdf
 python-multipart
+scikit-learn
 
 openai
 langchain
