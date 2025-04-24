@@ -164,7 +164,7 @@ export default function LeaseQA() {
 
                 {response && (
   <div className="bg-gray-800 p-4 mt-4 rounded whitespace-pre-wrap animate-fade-in">
-    <pre className="text-white">{response}</pre>
+    <div className="whitespace-pre-wrap break-words">{response}</div>
     <button
       onClick={() => handleShowClauses("user_question")}
       className="mt-2 text-sm text-blue-400 underline"
