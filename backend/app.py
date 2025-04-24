@@ -12,8 +12,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["lease-analyzer-7og7.vercel.app"],  # Change to your frontend URL later
     allow_credentials=True,
-    allow_methods=["lease-analyzer-7og7.vercel.app"],
-    allow_headers=["lease-analyzer-7og7.vercel.app"],
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 @app.post("/upload")
