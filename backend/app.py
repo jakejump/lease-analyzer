@@ -16,6 +16,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.get("/test-cors")
+def test_cors():
+    return {"message": "CORS is working"}
+
 @app.post("/upload")
 async def upload_file(file: UploadFile = File(...)):
     import os
