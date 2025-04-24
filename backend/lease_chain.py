@@ -221,4 +221,4 @@ def get_clauses_for_topic(pdf_path, topic):
     if not filtered:
         filtered = sorted(doc_scores, key=lambda x: x[1], reverse=True)[:3]
 
-    return [f"Score {round(score, 3)} → {doc.page_content.strip()}" for doc, score in filtered]
+    return [{doc.page_content.strip()}" for doc, score in filtered]
