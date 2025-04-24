@@ -22,11 +22,14 @@ export default function LeaseQA() {
         const formData = new FormData();
         formData.append("file", file);
         const res = await axios.post("https://lease-analyzer-c2i4.onrender.com/upload", formData);
+        console.log("res:", risks);
         try {
             const parsed = typeof res.data.risks === "string"
                 ? JSON.parse(res.data.risks)
                 : res.data.risks;
+            console.log("parsed:", risks);
             setRisks(parsed);
+            console.log("Current risks state:", risks);
         } catch {
             console.error("Failed to parse risks JSON:", res.data.risks);
             setRisks({});
