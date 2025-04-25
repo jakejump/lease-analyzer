@@ -167,7 +167,7 @@ export default function LeaseQA() {
     <div className="whitespace-pre-wrap break-words">{response}</div>
     <button
       onClick={() => handleShowClauses("user_question")}
-      className="mt-2 text-sm text-blue-400 underline"
+      className="mt-2 px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
       disabled={loadingClauses === "user_question"}
     >
       {loadingClauses === "user_question" ? "Gathering Clauses..." : clauseContext["user_question"]?.length > 0 ? "Hide Clauses" : "Show Clauses"}
