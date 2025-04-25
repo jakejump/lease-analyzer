@@ -101,22 +101,66 @@ def evaluate_general_risks(pdf_path):
     SYSTEM = """
     You are a risk analyst evaluating a lease document. You are an analyst for a firm that is purchasing or puttng together commercial real-estate deals, so the risk should be from the perspective of the lessor. Based on the following context, score the lease across the following general risk categories from 1 (high risk) to 10 (low risk) and explain each score:
 
-    - Termination Risk
-    - Financial Exposure
-    - Legal Ambiguity
-    - Operational Complexity
-    - Assignment/Subletting Risk
-    - Renewal and Escalation Risk
+    - Cash Flow Adjustments:
+        Lease Structure (Who Pays What?)
+            Gross Lease: Landlord pays most or all property expenses (riskier for landlord).
+            Net Lease: Tenant pays some or all operating expenses.
+                Single Net: Tenant pays property taxes.
+                Double Net: Taxes + insurance.
+                Triple Net (NNN): Taxes + insurance + maintenance.
+            Risk: Gross leases shift cost risk to you; NNN leases shift it to tenants (safer).
+        Capital Expenditure (CapEx) Obligations
+            Who is responsible for big repairs like roof, HVAC, structure?
+            Tenant Improvement (TI) Allowances: Did the landlord promise money for upgrades?
+            Risk: You could be on the hook for big unexpected costs.
+        Co-tenancy clauses (in retail leases: tenant can pay less or leave if anchor tenants leave).
+        Free rent periods or concessions built into the lease.
+        
+    - Future Cash Flow:
+        Renewal options (does tenant have options to stay longer, and at what rates?)
+        Risk: Short-term leases = turnover risk, renewal uncertainty.
+        Scheduled rent escalations (fixed bumps? CPI-linked increases?)
+        Risk: If market rents are falling, or if you're locked into below-market leases, it hurts cash flow and future value.
+        Outline exposure to inflation and changes in interest rates
+
+    - Inflation/Interest Rate Exposure:
+	    Macro implications of the lease contract. 
+        If there is high inflation, how do rent escalations hold up, how do renewal options affect the value of the lease contract, how does the specific working of cash flow adjustments (like TI and lease structure) hold up. 
+        Is it beneficial for the lessor or is it a negative.
+        Apply the same logic to changes in global/nationwide interest rates.
+
+    - Use and Exclusivity Clauses:
+        Permitted use: What exactly can the tenant do on the property?
+        Exclusive use rights: Do they have rights that could restrict future tenants?
+        Risk: Restrictions can limit re-leasing flexibility.
+        Sublease or assignment rights (can tenant sublease easily? Risk of poor subtenants.)
+        SNDA agreements (Subordination, Non-Disturbance, and Attornment).
+
+    - Default and Termination Clauses:
+        Early termination rights (can the tenant break the lease? On what terms?)
+        Default provisions (what triggers an eviction? Cure periods?)
+        Risk: Easy outs or weak default clauses mean unstable cash flow.
+
+    - Collateral and Insurance:
+        Security Deposits, Guarantees, and Collateral
+            Security deposit size and conditions.
+            Personal or corporate guarantees (especially important for smaller tenants).
+            Letters of credit or other forms of collateral.
+            Risk: More security = better recovery in a default.
+        Insurance Requirements
+            Tenant’s insurance obligations (and evidence they maintain them).
+            Landlord's insurance coverage (especially for common areas).
+            Risk: Poor insurance setups = risk of uncovered losses.
 
     Please return your result strictly in the following JSON format, and nothing else:
 
     {{
-      "termination_risk": {{"score": int, "explanation": str}},
-      "financial_exposure": {{"score": int, "explanation": str}},
-      "legal_ambiguity": {{"score": int, "explanation": str}},
-      "operational_complexity": {{"score": int, "explanation": str}},
-      "assignment_subletting_risk": {{"score": int, "explanation": str}},
-      "renewal_escalation_risk": {{"score": int, "explanation": str}}
+      "cash _flow_adjustments": {{"score": int, "explanation": str}},
+      "future_cash_flow": {{"score": int, "explanation": str}},
+      "inflation/interest_rate_exposure": {{"score": int, "explanation": str}},
+      "use_and_exclusivity_clauses": {{"score": int, "explanation": str}},
+      "default_and_termination_clauses": {{"score": int, "explanation": str}},
+      "collateral_and_insurance": {{"score": int, "explanation": str}}
     }}
 
     Do not include any commentary or markdown — only valid JSON.
