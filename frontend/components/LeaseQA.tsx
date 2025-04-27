@@ -22,18 +22,20 @@ export default function LeaseQA() {
         setEvaluating(true);
         const formData = new FormData();
         formData.append("file", file);
-        const res = await axios.post("https://lease-analyzer-c2i4.onrender.com/upload", formData);
+
         try {
-            const parsedRisks = typeof res.data.risks === "string"
-                ? JSON.parse(res.data.risks)
-                : res.data.risks;
+            const resUpload = await axios.post("https://lease-analyzer-c2i4.onrender.com/upload", formData);
+            const parsedRisks = typeof resUpload.data.risks === "string"
+                ? JSON.parse(resUpload.data.risks)
+                : resUpload.data.risks;
             setRisks(parsedRisks);
 
-            const parsedAbnormalities = res.data.abnormalities || [];
+            const resAbnormalities = await axios.post("https://lease-analyzer-c2i4.onrender.com/abnormalities", formData);
+            const parsedAbnormalities = resAbnormalities.data.abnormalities || [];
             setAbnormalities(parsedAbnormalities);
 
         } catch {
-            console.error("Failed to parse JSON:", res.data);
+            console.error("Failed during upload or abnormalities detection");
             setRisks({});
             setAbnormalities([]);
         } finally {
