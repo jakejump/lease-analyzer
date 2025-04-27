@@ -41,7 +41,7 @@ from lease_chain import get_clauses_for_topic, detect_abnormalities
 @app.post("/abnormalities")
 async def fetch_clauses(topic: str = Form(...)):
     abnormalitites = detect_abnormalities("temp/lease.pdf")
-    print(clauses)
+    print(abnormalitites)
     return {"clauses": abnormalities}
 
 @app.post("/clauses")
