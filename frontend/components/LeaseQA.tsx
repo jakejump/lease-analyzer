@@ -32,7 +32,7 @@ export default function LeaseQA() {
             const parsedAbnormalities = res.data.abnormalities || [];
             setAbnormalities(parsedAbnormalities);
 
-        } catch (error) {
+        } catch {
             console.error("Failed to parse JSON:", res.data);
             setRisks({});
             setAbnormalities([]);
