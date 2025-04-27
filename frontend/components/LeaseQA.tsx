@@ -11,6 +11,7 @@ export default function LeaseQA() {
     const [question, setQuestion] = useState<string>("");
     const [response, setResponse] = useState<string | null>(null);
     const [risks, setRisks] = useState<Record<string, RiskAssessment> | null>(null);
+    const [abnormalities, setAbnormalities] = useState<string[]>([]);
     const [loading, setLoading] = useState<boolean>(false);
     const [evaluating, setEvaluating] = useState<boolean>(false);
     const [clauseContext, setClauseContext] = useState<Record<string, string[]>>({});
@@ -22,17 +23,19 @@ export default function LeaseQA() {
         const formData = new FormData();
         formData.append("file", file);
         const res = await axios.post("https://lease-analyzer-c2i4.onrender.com/upload", formData);
-        console.log("res:", risks);
         try {
-            const parsed = typeof res.data.risks === "string"
+            const parsedRisks = typeof res.data.risks === "string"
                 ? JSON.parse(res.data.risks)
                 : res.data.risks;
-            console.log("parsed:", risks);
-            setRisks(parsed);
-            console.log("Current risks state:", risks);
-        } catch {
-            console.error("Failed to parse risks JSON:", res.data.risks);
+            setRisks(parsedRisks);
+
+            const parsedAbnormalities = res.data.abnormalities || [];
+            setAbnormalities(parsedAbnormalities);
+
+        } catch (error) {
+            console.error("Failed to parse JSON:", res.data);
             setRisks({});
+            setAbnormalities([]);
         } finally {
             setEvaluating(false);
         }
@@ -145,6 +148,17 @@ export default function LeaseQA() {
                     </div>
                 )}
 
+                {abnormalities.length > 0 && (
+                    <div className="bg-gray-800 p-4 rounded shadow animate-fade-in mt-6">
+                        <h2 className="text-lg font-semibold mb-4">Abnormalities Found</h2>
+                        <ul className="list-disc pl-5 space-y-2 text-red-400">
+                            {abnormalities.map((abnormality, idx) => (
+                                <li key={idx}>{abnormality}</li>
+                            ))}
+                        </ul>
+                    </div>
+                )}
+
                 <div className="space-y-2">
                     <textarea
                         placeholder="Ask a question about the lease..."
@@ -163,28 +177,28 @@ export default function LeaseQA() {
                 </div>
 
                 {response && (
-  <div className="bg-gray-800 p-4 mt-4 rounded whitespace-pre-wrap animate-fade-in">
-    <div className="whitespace-pre-wrap break-words">{response}</div>
-    <button
-      onClick={() => handleShowClauses("user_question")}
-      className="mt-2 px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
-      disabled={loadingClauses === "user_question"}
-    >
-      {loadingClauses === "user_question" ? "Gathering Clauses..." : clauseContext["user_question"]?.length > 0 ? "Hide Clauses" : "Show Clauses"}
-    </button>
+                    <div className="bg-gray-800 p-4 mt-4 rounded whitespace-pre-wrap animate-fade-in">
+                        <div className="whitespace-pre-wrap break-words">{response}</div>
+                        <button
+                            onClick={() => handleShowClauses("user_question")}
+                            className="mt-2 px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
+                            disabled={loadingClauses === "user_question"}
+                        >
+                            {loadingClauses === "user_question" ? "Gathering Clauses..." : clauseContext["user_question"]?.length > 0 ? "Hide Clauses" : "Show Clauses"}
+                        </button>
 
-    {clauseContext["user_question"]?.length > 0 && (
-      <div className="mt-4 text-sm text-gray-300">
-        <strong className="block mb-1">Relevant Clauses:</strong>
-        <ul className="list-disc pl-5 space-y-1">
-          {clauseContext["user_question"].map((text, idx) => (
-            <li key={idx}>{text}</li>
-          ))}
-        </ul>
-      </div>
-    )}
-  </div>
-)}
+                        {clauseContext["user_question"]?.length > 0 && (
+                            <div className="mt-4 text-sm text-gray-300">
+                                <strong className="block mb-1">Relevant Clauses:</strong>
+                                <ul className="list-disc pl-5 space-y-1">
+                                    {clauseContext["user_question"].map((text, idx) => (
+                                        <li key={idx}>{text}</li>
+                                    ))}
+                                </ul>
+                            </div>
+                        )}
+                    </div>
+                )}
             </div>
 
             <style jsx global>{`
