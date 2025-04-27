@@ -30,7 +30,7 @@ export default function LeaseQA() {
                 : resUpload.data.risks;
             setRisks(parsedRisks);
 
-            const resAbnormalities = await axios.post("https://lease-analyzer-c2i4.onrender.com/abnormalities", formData);
+            const resAbnormalities = await axios.post("https://lease-analyzer-c2i4.onrender.com/abnormalities");
             const parsedAbnormalities = resAbnormalities.data.abnormalities || [];
             setAbnormalities(parsedAbnormalities);
 
