@@ -33,6 +33,7 @@ export default function LeaseQA() {
             const resAbnormalities = await axios.post("https://lease-analyzer-c2i4.onrender.com/abnormalities");
             const parsedAbnormalities = resAbnormalities.data.abnormalities || [];
             setAbnormalities(parsedAbnormalities);
+            console.log("Abnormalities", abnormalities);
 
         } catch {
             console.error("Failed during upload or abnormalities detection");
