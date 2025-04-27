@@ -239,6 +239,7 @@ def detect_abnormalities(pdf_path):
     )
 
     result = chain.invoke("Identify abnormalities in the lease.")
+    print(result)
     try:
         return json.loads(result)
     except Exception as e:
