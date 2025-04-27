@@ -39,7 +39,7 @@ from fastapi import Body
 from lease_chain import get_clauses_for_topic, detect_abnormalities
 
 @app.post("/abnormalities")
-async def fetch_clauses(topic: str = Form(...)):
+async def fetch_clauses():
     abnormalitites = detect_abnormalities("temp/lease.pdf")
     print(abnormalitites)
     return {"clauses": abnormalities}
