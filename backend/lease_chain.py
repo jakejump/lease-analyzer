@@ -94,6 +94,7 @@ def run_rag_pipeline(pdf_path, question):
 
 def evaluate_general_risks(pdf_path):
     chunks = load_lease_docs(pdf_path)
+    print("chunks", chunks)
     embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
     vectorstore = FAISS.from_documents(chunks, embeddings)
     retriever = vectorstore.as_retriever(search_type="mmr", search_kwargs={"k": 12})
