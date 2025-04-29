@@ -14,6 +14,7 @@ import json
 def extract_text_from_pdf(pdf_path: str) -> str:
     loader = PyPDFLoader(pdf_path)
     docs = loader.load()
+    print("docs", docs)
     return "\n".join(doc.page_content for doc in docs)
 
 
@@ -57,6 +58,7 @@ def split_into_paragraphs_or_clauses(text: str) -> List[str]:
 
 def load_lease_docs(pdf_path: str) -> List[Document]:
     text = extract_text_from_pdf(pdf_path)
+    print("text", text)
     paragraphs = split_into_paragraphs_or_clauses(text)
     return [Document(page_content=para, metadata={"index": i}) for i, para in enumerate(paragraphs)]
 
