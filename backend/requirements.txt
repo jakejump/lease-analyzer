@@ -11,3 +11,8 @@ langchain-core
 langchain-community
 langchain-openai
 langchain-text-splitters
+
+unstructured
+pytesseract
+pdf2image
+Pillow
