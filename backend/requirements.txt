@@ -18,6 +18,6 @@ Pillow
 pdfminer.six
 pi-heif
 
-unstructured_inference
 unstructured[pytesseract]
+unstructured_inference
 layoutparser[layoutmodels,tesseract]
