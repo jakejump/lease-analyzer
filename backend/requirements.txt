@@ -12,7 +12,6 @@ langchain-community
 langchain-openai
 langchain-text-splitters
 
-unstructured
 pytesseract
 pdf2image
 Pillow
@@ -20,4 +19,5 @@ pdfminer.six
 pi-heif
 
 unstructured_inference
+unstructured[pytesseract]
 layoutparser[layoutmodels,tesseract]
