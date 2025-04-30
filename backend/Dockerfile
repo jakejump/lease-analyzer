@@ -26,4 +26,5 @@ RUN pip install -r requirements.txt
 
 # Expose port and run app
 EXPOSE 8000
+RUN echo "✅ Dockerfile successfully built and running!"
 CMD ["sh", "-c", "uvicorn app:app --host 0.0.0.0 --port ${PORT:-8000}"]
