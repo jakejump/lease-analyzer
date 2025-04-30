@@ -16,3 +16,4 @@ unstructured
 pytesseract
 pdf2image
 Pillow
+pdfminer.six
