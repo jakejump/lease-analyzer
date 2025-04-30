@@ -95,6 +95,7 @@ def run_rag_pipeline(pdf_path, question):
 
 
 def evaluate_general_risks(pdf_path):
+    print("🔍 Starting risk evaluation...")
     chunks = load_lease_docs(pdf_path)
     print("chunks", chunks)
     embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
