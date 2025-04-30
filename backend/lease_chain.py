@@ -13,7 +13,7 @@ import unstructured_pytesseract
 
 from unstructured.partition.utils.ocr_models.ocr_interface import OCRAgent
 print(OCRAgent.get_instance(
-    ocr_agent_module="unstructured_pytesseract",
+    ocr_agent_module="unstructured_pytesseract.ocr_agent.PytesseractOCRAgent",
     language="eng"
 ).__class__)
 
