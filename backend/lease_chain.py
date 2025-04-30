@@ -1,4 +1,4 @@
-from langchain_community.document_loaders import PyPDFLoader
+from langchain_community.document_loaders import UnstructuredPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_community.vectorstores import FAISS
@@ -57,7 +57,7 @@ def split_into_paragraphs_or_clauses(text: str) -> List[str]:
 
 
 def load_lease_docs(pdf_path: str) -> List[Document]:
-    text = extract_text_from_pdf(pdf_path)
+    loader = UnstructuredPDFLoader(pdf_path, mode="elements")
     print("text", text)
     paragraphs = split_into_paragraphs_or_clauses(text)
     return [Document(page_content=para, metadata={"index": i}) for i, para in enumerate(paragraphs)]
