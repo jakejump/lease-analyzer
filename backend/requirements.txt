@@ -17,3 +17,4 @@ pytesseract
 pdf2image
 Pillow
 pdfminer.six
+pi-heif
