@@ -24,13 +24,13 @@ export default function LeaseQA() {
         formData.append("file", file);
 
         try {
-            const resUpload = await axios.post("https://lease-analyzer-c2i4.onrender.com/upload", formData);
+            const resUpload = await axios.post("https://lease-analyzer-2.onrender.com/upload", formData);
             const parsedRisks = typeof resUpload.data.risks === "string"
                 ? JSON.parse(resUpload.data.risks)
                 : resUpload.data.risks;
             setRisks(parsedRisks);
 
-            const resAbnormalities = await axios.post("https://lease-analyzer-c2i4.onrender.com/abnormalities");
+            const resAbnormalities = await axios.post("https://lease-analyzer-2.onrender.com/abnormalities");
             const parsedAbnormalities = resAbnormalities.data.abnormalities || [];
             setAbnormalities(parsedAbnormalities);
             console.log("Abnormalities", abnormalities);
@@ -48,7 +48,7 @@ export default function LeaseQA() {
         setLoading(true);
         const formData = new FormData();
         formData.append("question", question);
-        const res = await axios.post("https://lease-analyzer-c2i4.onrender.com/ask", formData);
+        const res = await axios.post("https://lease-analyzer-2.onrender.com/ask", formData);
         setResponse(res.data.answer);
         setLoading(false);
     };
@@ -66,7 +66,7 @@ export default function LeaseQA() {
         setLoadingClauses(topic);
         const formData = new FormData();
         formData.append("topic", topic);
-        const res = await axios.post("https://lease-analyzer-c2i4.onrender.com/clauses", formData);
+        const res = await axios.post("https://lease-analyzer-2.onrender.com/clauses", formData);
         setClauseContext(prev => ({ ...prev, [topic]: res.data.clauses || [] }));
         setLoadingClauses(null);
     };
