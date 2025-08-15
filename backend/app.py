@@ -74,6 +74,21 @@ def get_project(project_id: str):
         return ProjectOut(id=p.id, name=p.name, description=p.description, current_version_id=p.current_version_id)
 
 
+@app.patch("/v1/projects/{project_id}", response_model=ProjectOut)
+def update_project(project_id: str, current_version_id: str | None = Form(default=None), name: str | None = Form(default=None), description: str | None = Form(default=None)):
+    with session_scope() as s:
+        p = s.get(Project, project_id)
+        if not p:
+            return {"id": project_id, "name": "", "description": None}
+        if current_version_id is not None:
+            p.current_version_id = current_version_id
+        if name is not None:
+            p.name = name
+        if description is not None:
+            p.description = description
+        return ProjectOut(id=p.id, name=p.name, description=p.description, current_version_id=p.current_version_id)
+
+
 @app.post("/v1/projects/{project_id}/versions", response_model=LeaseVersionOut)
 def create_version(project_id: str, body: VersionCreate):
     with session_scope() as s:
@@ -101,6 +116,38 @@ def list_versions(project_id: str):
             )
             for r in rows
         ]
+
+
+@app.get("/v1/projects/{project_id}/versions/status", response_model=list[VersionStatusResponse])
+def list_versions_status(project_id: str):
+    with session_scope() as s:
+        rows = s.query(LeaseVersion).filter(LeaseVersion.project_id == project_id).order_by(LeaseVersion.created_at.desc()).all()
+        out: list[VersionStatusResponse] = []
+        try:
+            conn = Redis()
+        except Exception:
+            conn = None
+        for v in rows:
+            stage = None
+            progress = None
+            if conn:
+                try:
+                    data = conn.hgetall(f"version:{v.id}:status")
+                    if data:
+                        stage = (data.get(b"stage") or b"").decode() or None
+                        val = (data.get(b"progress") or b"").decode()
+                        progress = int(val) if val.isdigit() else None
+                except Exception:
+                    pass
+            out.append(VersionStatusResponse(
+                id=v.id,
+                status=v.status.value,
+                created_at=v.created_at.isoformat() if v.created_at else None,
+                updated_at=v.updated_at.isoformat() if v.updated_at else None,
+                stage=stage,
+                progress=progress,
+            ))
+        return out
 
 
 @app.post("/v1/projects/{project_id}/versions/upload", response_model=LeaseVersionOut)
