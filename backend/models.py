@@ -39,6 +39,8 @@ class Project(Base):
     updated_at = Column(DateTime, default=datetime.utcnow)
 
     owner = relationship("User")
+    # Optional: access the current version if needed
+    # current_version = relationship("LeaseVersion", foreign_keys=[current_version_id], uselist=False)
 
 
 class ProjectMember(Base):
@@ -74,7 +76,7 @@ class LeaseVersion(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow)
 
-    project = relationship("Project")
+    project = relationship("Project", foreign_keys=[project_id])
 
 
 class RiskScore(Base):
