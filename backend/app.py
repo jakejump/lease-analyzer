@@ -11,7 +11,10 @@ from backend.lease_chain import (
 from backend.paths import _doc_dir
 from backend.state import LATEST_DOC_ID as _LATEST_DOC_ID
 from backend.config import get_allowed_origins, APP_VERSION
-from backend.schemas import UploadResponse, AskResponse, AbnormalitiesResponse, ClausesResponse
+from backend.schemas import UploadResponse, AskResponse, AbnormalitiesResponse, ClausesResponse, ProjectCreate, ProjectOut, VersionCreate, LeaseVersionOut
+from backend.db import session_scope
+from backend.models import Base, Project, LeaseVersion, LeaseVersionStatus
+from sqlalchemy import select
 import shutil, os
 
 app = FastAPI()
@@ -29,6 +32,32 @@ app.add_middleware(
 @app.get("/test-cors")
 def test_cors():
     return {"message": "CORS is working"}
+
+
+# Projects
+@app.post("/v1/projects", response_model=ProjectOut)
+def create_project(body: ProjectCreate):
+    with session_scope() as s:
+        p = Project(name=body.name, description=body.description)
+        s.add(p)
+        s.flush()
+        return ProjectOut(id=p.id, name=p.name, description=p.description)
+
+
+@app.get("/v1/projects", response_model=list[ProjectOut])
+def list_projects():
+    with session_scope() as s:
+        rows = s.execute(select(Project)).scalars().all()
+        return [ProjectOut(id=r.id, name=r.name, description=r.description) for r in rows]
+
+
+@app.post("/v1/projects/{project_id}/versions", response_model=LeaseVersionOut)
+def create_version(project_id: str, body: VersionCreate):
+    with session_scope() as s:
+        v = LeaseVersion(project_id=project_id, label=body.label, status=LeaseVersionStatus.uploaded)
+        s.add(v)
+        s.flush()
+        return LeaseVersionOut(id=v.id, project_id=v.project_id, label=v.label, status=v.status.value, created_at=v.created_at.isoformat() if v.created_at else None)
 
 @app.post("/upload", response_model=UploadResponse)
 async def upload_file(file: UploadFile = File(...)):

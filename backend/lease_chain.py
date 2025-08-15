@@ -18,24 +18,22 @@ import json
 from pathlib import Path
 from hashlib import md5
 from typing import Optional
+from backend.paths import _doc_dir, _project_root, doc_id_from_pdf_path as _DOC_ID_FROM_PATH
+from backend.state import LATEST_DOC_ID as _LATEST_DOC_ID, DOC_CACHE as _DOC_CACHE
+from backend.vector_store import (
+    get_or_build_vectorstore_for_doc as _vs_get,
+    save_chunks_json as _save_chunks_json,
+    load_chunks_json as _load_chunks_json,
+)
 
 # Tracks the most recently uploaded document id so that endpoints can
 # default to operating on the latest document without an explicit id.
-_LATEST_DOC_ID: Optional[str] = None
-_DOC_CACHE: Dict[str, Dict[str, Any]] = {}
-
-def _project_root() -> Path:
-    return Path(__file__).resolve().parents[1]
+# Values are provided by backend.state and imported above as _LATEST_DOC_ID and _DOC_CACHE
 
 def _temp_root() -> Path:
     temp_dir = _project_root() / "temp"
     temp_dir.mkdir(parents=True, exist_ok=True)
     return temp_dir
-
-def _doc_dir(doc_id: str) -> Path:
-    directory = _temp_root() / doc_id
-    directory.mkdir(parents=True, exist_ok=True)
-    return directory
 
 def _compute_doc_id_for_file(file_path: str | Path) -> str:
     global _LATEST_DOC_ID
@@ -51,57 +49,16 @@ def _compute_doc_id_for_file(file_path: str | Path) -> str:
 
 
 def _doc_id_from_pdf_path(pdf_path: str | Path) -> str:
-    return Path(pdf_path).resolve().parent.name
+    return _DOC_ID_FROM_PATH(pdf_path)
 
 def _chunks_path(doc_id: str) -> Path:
     return _doc_dir(doc_id) / "chunks.json"
 
-def _save_chunks_json(doc_id: str, docs: List[Document]) -> None:
-    data = [
-        {"page_content": d.page_content, "metadata": d.metadata}
-        for d in docs
-    ]
-    _chunks_path(doc_id).write_text(json.dumps(data), encoding="utf-8")
-
-def _load_chunks_json(doc_id: str) -> Optional[List[Document]]:
-    cp = _chunks_path(doc_id)
-    if not cp.exists():
-        return None
-    try:
-        raw = json.loads(cp.read_text(encoding="utf-8"))
-        return [Document(page_content=it.get("page_content", ""), metadata=it.get("metadata", {})) for it in raw]
-    except Exception as e:
-        print("Failed to load chunks.json:", e)
-        return None
-
 def _get_or_build_vectorstore_for_doc(doc_id: str) -> tuple[FAISS, List[Document]]:
-    if doc_id in _DOC_CACHE:
-        cached = _DOC_CACHE[doc_id]
-        return cached["vectorstore"], cached["docs"]
-
-    embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
-    folder = str(_doc_dir(doc_id))
-
-    # Try load from disk first for speed
-    try:
-        vs = FAISS.load_local(folder, embeddings, allow_dangerous_deserialization=True)
-        docs = _load_chunks_json(doc_id)
-        if docs is None:
-            # Fallback: reconstruct docs from docstore
-            docs = list(vs.docstore._dict.values())  # type: ignore[attr-defined]
-        _DOC_CACHE[doc_id] = {"vectorstore": vs, "docs": docs}
-        return vs, docs
-    except Exception as e:
-        print("No saved FAISS index for doc; building new one:", e)
-
-    # Build from PDF
-    pdf_path = str(_doc_dir(doc_id) / "lease.pdf")
-    docs = load_lease_docs(pdf_path)
-    vs = FAISS.from_documents(docs, embeddings)
-    vs.save_local(folder)
-    _save_chunks_json(doc_id, docs)
-    _DOC_CACHE[doc_id] = {"vectorstore": vs, "docs": docs}
-    return vs, docs
+    def _builder():
+        pdf_path = str(_doc_dir(doc_id) / "lease.pdf")
+        return load_lease_docs(pdf_path)
+    return _vs_get(doc_id, _builder)
 
 
 
