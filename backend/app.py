@@ -1,8 +1,13 @@
 
 from fastapi import FastAPI, File, UploadFile, Form
 from fastapi.middleware.cors import CORSMiddleware
-from backend.lease_chain import run_rag_pipeline, evaluate_general_risks, load_lease_docs, _compute_doc_id_for_file
-from backend.vector_store import get_or_build_vectorstore_for_doc as _get_or_build_vectorstore_for_doc
+from backend.lease_chain import (
+    run_rag_pipeline,
+    evaluate_general_risks,
+    load_lease_docs,
+    _compute_doc_id_for_file,
+    _get_or_build_vectorstore_for_doc,
+)
 from backend.paths import _doc_dir
 from backend.state import LATEST_DOC_ID as _LATEST_DOC_ID
 from backend.config import get_allowed_origins, APP_VERSION
