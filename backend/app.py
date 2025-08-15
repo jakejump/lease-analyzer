@@ -16,6 +16,7 @@ from backend.db import session_scope
 from backend.models import Base, Project, LeaseVersion, LeaseVersionStatus, RiskScore, AbnormalityRecord
 from sqlalchemy import select
 import json
+from backend.storage import put_file
 import shutil, os
 
 app = FastAPI()
@@ -57,6 +58,25 @@ def create_version(project_id: str, body: VersionCreate):
     with session_scope() as s:
         v = LeaseVersion(project_id=project_id, label=body.label, status=LeaseVersionStatus.uploaded)
         s.add(v)
+        s.flush()
+        return LeaseVersionOut(id=v.id, project_id=v.project_id, label=v.label, status=v.status.value, created_at=v.created_at.isoformat() if v.created_at else None)
+
+
+@app.post("/v1/projects/{project_id}/versions/upload", response_model=LeaseVersionOut)
+async def upload_version_file(project_id: str, label: str | None = Form(default=None), file: UploadFile = File(...)):
+    # Save raw PDF into storage
+    os.makedirs("temp", exist_ok=True)
+    tmp_path = f"temp/{file.filename or 'lease.pdf'}"
+    with open(tmp_path, "wb") as f:
+        shutil.copyfileobj(file.file, f)
+    with session_scope() as s:
+        v = LeaseVersion(project_id=project_id, label=label, status=LeaseVersionStatus.uploaded)
+        s.add(v)
+        s.flush()
+        # Store file under storage/projects/{project_id}/{version_id}/lease.pdf
+        rel = f"projects/{project_id}/{v.id}/lease.pdf"
+        file_url = put_file(tmp_path, rel)
+        v.file_url = file_url
         s.flush()
         return LeaseVersionOut(id=v.id, project_id=v.project_id, label=v.label, status=v.status.value, created_at=v.created_at.isoformat() if v.created_at else None)
 
