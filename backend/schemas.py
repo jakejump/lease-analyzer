@@ -59,6 +59,8 @@ class VersionStatusResponse(BaseModel):
     status: str
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
+    stage: Optional[str] = None
+    progress: Optional[int] = None
 
 
 class RiskOut(BaseModel):

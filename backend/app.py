@@ -18,6 +18,7 @@ from sqlalchemy import select
 import json
 from backend.storage import put_file
 from backend.jobs import get_queue, process_version
+from redis import Redis
 from backend.db import engine
 import shutil, os
 
@@ -120,7 +121,25 @@ def get_version_status(version_id: str):
         v = s.get(LeaseVersion, version_id)
         if not v:
             return {"id": version_id, "status": "not_found"}
-        return VersionStatusResponse(id=v.id, status=v.status.value, created_at=v.created_at.isoformat() if v.created_at else None, updated_at=v.updated_at.isoformat() if v.updated_at else None)
+        stage = None
+        progress = None
+        try:
+            conn = Redis()
+            data = conn.hgetall(f"version:{version_id}:status")
+            if data:
+                stage = (data.get(b"stage") or b"").decode() or None
+                val = (data.get(b"progress") or b"").decode()
+                progress = int(val) if val.isdigit() else None
+        except Exception:
+            pass
+        return VersionStatusResponse(
+            id=v.id,
+            status=v.status.value,
+            created_at=v.created_at.isoformat() if v.created_at else None,
+            updated_at=v.updated_at.isoformat() if v.updated_at else None,
+            stage=stage,
+            progress=progress,
+        )
 
 
 @app.get("/v1/versions/{version_id}/risk", response_model=RiskOut)
