@@ -1,7 +1,8 @@
 
 from fastapi import FastAPI, File, UploadFile, Form
 from fastapi.middleware.cors import CORSMiddleware
-from backend.lease_chain import run_rag_pipeline, evaluate_general_risks, load_lease_docs
+from backend.lease_chain import run_rag_pipeline, evaluate_general_risks, load_lease_docs, _get_or_build_vectorstore_for_doc, _doc_dir, _compute_doc_id_for_file, _LATEST_DOC_ID
+from backend.config import get_allowed_origins, APP_VERSION
 import shutil, os
 
 app = FastAPI()
@@ -10,11 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "https://lease-analyzer-7og7.vercel.app",
-    ],
+    allow_origins=get_allowed_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -27,7 +24,6 @@ def test_cors():
 @app.post("/upload")
 async def upload_file(file: UploadFile = File(...)):
     import os
-    from backend.lease_chain import _compute_doc_id_for_file, _doc_dir
     os.makedirs("temp", exist_ok=True)
     # Save to a temp path first
     tmp_path = "temp/lease.pdf"
@@ -39,6 +35,8 @@ async def upload_file(file: UploadFile = File(...)):
     target_path = str(target_dir / "lease.pdf")
     if not os.path.exists(target_path):
         shutil.copy(tmp_path, target_path)
+    # Prebuild vector index so first query is instant
+    _get_or_build_vectorstore_for_doc(doc_id)
     risks = evaluate_general_risks(target_path)
     return {"message": "File uploaded successfully.", "doc_id": doc_id, "risks": risks}
 
@@ -87,3 +85,12 @@ async def fetch_clauses(topic: str = Form(...), doc_id: str | None = Form(defaul
     clauses = get_clauses_for_topic(pdf_path, topic)
     print(clauses)
     return {"clauses": clauses}
+
+
+@app.get("/healthz")
+def healthz():
+    return {"status": "ok", "version": APP_VERSION}
+
+@app.get("/version")
+def version():
+    return {"version": APP_VERSION}
