@@ -65,6 +65,15 @@ def list_projects():
         return [ProjectOut(id=r.id, name=r.name, description=r.description) for r in rows]
 
 
+@app.get("/v1/projects/{project_id}", response_model=ProjectOut)
+def get_project(project_id: str):
+    with session_scope() as s:
+        p = s.get(Project, project_id)
+        if not p:
+            return {"id": project_id, "name": "", "description": None}
+        return ProjectOut(id=p.id, name=p.name, description=p.description)
+
+
 @app.post("/v1/projects/{project_id}/versions", response_model=LeaseVersionOut)
 def create_version(project_id: str, body: VersionCreate):
     with session_scope() as s:
