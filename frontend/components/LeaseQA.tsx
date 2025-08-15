@@ -11,34 +11,58 @@ export default function LeaseQA() {
     const [question, setQuestion] = useState<string>("");
     const [response, setResponse] = useState<string | null>(null);
     const [risks, setRisks] = useState<Record<string, RiskAssessment> | null>(null);
-    const [abnormalities, setAbnormalities] = useState<string[]>([]);
+    type Abnormality = { text: string; impact: 'beneficial' | 'harmful' | 'neutral' } | string;
+    const [abnormalities, setAbnormalities] = useState<Abnormality[]>([]);
     const [loading, setLoading] = useState<boolean>(false);
     const [evaluating, setEvaluating] = useState<boolean>(false);
     const [clauseContext, setClauseContext] = useState<Record<string, string[]>>({});
     const [loadingClauses, setLoadingClauses] = useState<string | null>(null);
+    const [docId, setDocId] = useState<string | null>(null);
 
-    const handleUpload = async () => {
+	const api = axios.create({
+		baseURL: process.env.NEXT_PUBLIC_API_BASE || 'http://127.0.0.1:8000',
+		timeout: 360000, // allow up to 6 minutes for large scanned PDFs
+		validateStatus: () => true,
+	});
+
+	const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+	const handleUpload = async () => {
         if (!file) return;
         setEvaluating(true);
         const formData = new FormData();
         formData.append("file", file);
 
         try {
-            const resUpload = await axios.post("https://lease-analyzer-2.onrender.com/upload", formData);
-            const parsedRisks = typeof resUpload.data.risks === "string"
-                ? JSON.parse(resUpload.data.risks)
-                : resUpload.data.risks;
-            setRisks(parsedRisks);
+				setErrorMessage(null);
+				const resUpload = await api.post("/upload", formData);
+				if (resUpload.status >= 400) {
+					throw new Error(`Upload failed (${resUpload.status})`);
+				}
+				const newDocId: string | undefined = resUpload.data?.doc_id as string | undefined;
+				if (newDocId) {
+					setDocId(newDocId);
+				}
+				const parsedRisks = typeof resUpload.data.risks === "string"
+					? JSON.parse(resUpload.data.risks)
+					: resUpload.data.risks;
+				setRisks(parsedRisks);
+				// Fetch abnormalities separately so a failure here doesn't wipe risks
+				try {
+					const abForm = new FormData();
+					const effectiveDocId = newDocId || docId;
+					if (effectiveDocId) abForm.append("doc_id", effectiveDocId);
+					const resAbnormalities = await api.post("/abnormalities", abForm);
+                    const parsedAbnormalities = resAbnormalities.data.abnormalities || [];
+					setAbnormalities(parsedAbnormalities);
+				} catch (e) {
+					console.warn("/abnormalities failed; continuing without it", e);
+				}
 
-            const resAbnormalities = await axios.post("https://lease-analyzer-2.onrender.com/abnormalities");
-            const parsedAbnormalities = resAbnormalities.data.abnormalities || [];
-            setAbnormalities(parsedAbnormalities);
-            console.log("Abnormalities", abnormalities);
-
-        } catch {
-            console.error("Failed during upload or abnormalities detection");
-            setRisks({});
-            setAbnormalities([]);
+			} catch (e) {
+				console.error("/upload failed", e);
+				setErrorMessage("Upload failed. Please check the backend logs and your internet connection.");
+				setRisks({});
         } finally {
             setEvaluating(false);
         }
@@ -48,7 +72,8 @@ export default function LeaseQA() {
         setLoading(true);
         const formData = new FormData();
         formData.append("question", question);
-        const res = await axios.post("https://lease-analyzer-2.onrender.com/ask", formData);
+		if (docId) formData.append("doc_id", docId);
+		const res = await api.post("/ask", formData);
         setResponse(res.data.answer);
         setLoading(false);
     };
@@ -66,7 +91,8 @@ export default function LeaseQA() {
         setLoadingClauses(topic);
         const formData = new FormData();
         formData.append("topic", topic);
-        const res = await axios.post("https://lease-analyzer-2.onrender.com/clauses", formData);
+		if (docId) formData.append("doc_id", docId);
+		const res = await api.post("/clauses", formData);
         setClauseContext(prev => ({ ...prev, [topic]: res.data.clauses || [] }));
         setLoadingClauses(null);
     };
@@ -138,9 +164,14 @@ export default function LeaseQA() {
                                             <div className="mt-4 text-sm text-gray-300">
                                                 <strong className="block mb-1">Relevant Clauses:</strong>
                                                 <ul className="list-disc pl-5 space-y-1">
-                                                    {clauses.map((text, idx) => (
-                                                        <li key={idx}>{text}</li>
-                                                    ))}
+                                                    {clauses.map((text, idx) => {
+                                                        const display = (text || "").replace(/\n  /g, "\n      ");
+                                                        return (
+                                                            <li key={idx}>
+                                                                <div className="whitespace-pre-wrap break-words">{display}</div>
+                                                            </li>
+                                                        );
+                                                    })}
                                                 </ul>
                                             </div>
                                         )}
@@ -154,10 +185,16 @@ export default function LeaseQA() {
                 {abnormalities.length > 0 && (
                     <div className="bg-gray-800 p-4 rounded shadow animate-fade-in mt-6">
                         <h2 className="text-lg font-semibold mb-4">Abnormalities Found</h2>
-                        <ul className="list-disc pl-5 space-y-2 text-red-400">
-                            {abnormalities.map((abnormality, idx) => (
-                                <li key={idx}>{abnormality}</li>
-                            ))}
+                        <ul className="list-disc pl-5 space-y-2">
+                            {abnormalities.map((item, idx) => {
+                                const isObj = typeof item === 'object' && item !== null && 'text' in item;
+                                const text = isObj ? (item as any).text as string : (item as string);
+                                const impact = isObj ? (item as any).impact as 'beneficial' | 'harmful' | 'neutral' : 'harmful';
+                                const color = impact === 'beneficial' ? 'text-green-400' : impact === 'neutral' ? 'text-yellow-400' : 'text-red-400';
+                                return (
+                                    <li key={idx} className={color}>{text}</li>
+                                );
+                            })}
                         </ul>
                     </div>
                 )}
@@ -183,20 +220,25 @@ export default function LeaseQA() {
                     <div className="bg-gray-800 p-4 mt-4 rounded whitespace-pre-wrap animate-fade-in">
                         <div className="whitespace-pre-wrap break-words">{response}</div>
                         <button
-                            onClick={() => handleShowClauses("user_question")}
+                            onClick={() => handleShowClauses(question || "user_question")}
                             className="mt-2 px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
                             disabled={loadingClauses === "user_question"}
                         >
                             {loadingClauses === "user_question" ? "Gathering Clauses..." : clauseContext["user_question"]?.length > 0 ? "Hide Clauses" : "Show Clauses"}
                         </button>
 
-                        {clauseContext["user_question"]?.length > 0 && (
+                        {clauseContext[question || "user_question"]?.length > 0 && (
                             <div className="mt-4 text-sm text-gray-300">
                                 <strong className="block mb-1">Relevant Clauses:</strong>
                                 <ul className="list-disc pl-5 space-y-1">
-                                    {clauseContext["user_question"].map((text, idx) => (
-                                        <li key={idx}>{text}</li>
-                                    ))}
+                                    {clauseContext[question || "user_question"].map((text, idx) => {
+                                        const display = (text || "").replace(/\n  /g, "\n      ");
+                                        return (
+                                            <li key={idx}>
+                                                <div className="whitespace-pre-wrap break-words">{display}</div>
+                                            </li>
+                                        );
+                                    })}
                                 </ul>
                             </div>
                         )}

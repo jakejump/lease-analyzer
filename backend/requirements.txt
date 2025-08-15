@@ -1,24 +1,45 @@
-fastapi
-uvicorn
-faiss-cpu
-pypdf
-python-multipart
-scikit-learn
+fastapi==0.115.12
+uvicorn==0.30.6
 
-openai
-langchain
-langchain-core
-langchain-community
-langchain-openai
-langchain-text-splitters
+# LangChain stack (aligned versions)
+langchain==0.3.27
+langchain-core==0.3.74
+langchain-community==0.3.27
+langchain-openai==0.3.14
+langchain-text-splitters==0.3.9
+openai==1.75.0
 
-pytesseract
-pdf2image
-Pillow
-pdfminer.six
-pi-heif
+# Vector store
+faiss-cpu==1.10.0
 
-unstructured
-unstructured_inference
-unstructured-pytesseract
-layoutparser[layoutmodels,tesseract]
+# PDF parsing (used by PyPDFLoader)
+pypdf==5.4.0
+# Higher-fidelity PDF text extraction
+pymupdf==1.24.11
+
+# Upload parsing
+python-multipart==0.0.20
+
+# Similarity scoring for clause retrieval
+scikit-learn==1.6.1
+
+# Removed heavy OCR/vision stack not used by current code:
+# pytesseract, pdf2image, Pillow, pdfminer.six, pi-heif,
+# unstructured, unstructured_inference, unstructured-pytesseract,
+# layoutparser[layoutmodels,tesseract]
+
+# OCR + Unstructured stack (required by current lease_chain imports)
+unstructured==0.15.14
+unstructured_inference==0.7.36
+unstructured-pytesseract==0.3.12
+pytesseract==0.3.10
+pdf2image==1.17.0
+Pillow==10.4.0
+pdfminer.six==20231228
+pi-heif==0.16.0
+
+# BM25 lexical retriever dependency
+rank-bm25==0.2.2
+
+# OpenCV for OCR preprocessing (headless build)
+opencv-python-headless==4.10.0.84
