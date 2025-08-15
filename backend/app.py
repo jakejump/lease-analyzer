@@ -97,21 +97,41 @@ async def upload_version_file(project_id: str, label: str | None = Form(default=
     tmp_path = f"temp/{file.filename or 'lease.pdf'}"
     with open(tmp_path, "wb") as f:
         shutil.copyfileobj(file.file, f)
+    # Compute content hash for dedupe
+    import hashlib
+    with open(tmp_path, "rb") as f:
+        content = f.read()
+    content_hash = hashlib.md5(content).hexdigest()
     with session_scope() as s:
-        v = LeaseVersion(project_id=project_id, label=label, status=LeaseVersionStatus.uploaded)
+        existing = s.query(LeaseVersion).filter(LeaseVersion.content_hash == content_hash, LeaseVersion.doc_id.isnot(None)).order_by(LeaseVersion.created_at.desc()).first()
+        v = LeaseVersion(project_id=project_id, label=label, status=LeaseVersionStatus.uploaded, content_hash=content_hash)
         s.add(v)
         s.flush()
         # Store file under storage/projects/{project_id}/{version_id}/lease.pdf
         rel = f"projects/{project_id}/{v.id}/lease.pdf"
         file_url = put_file(tmp_path, rel)
         v.file_url = file_url
+        if existing and existing.doc_id:
+            v.doc_id = existing.doc_id
+            v.status = LeaseVersionStatus.processed
+            try:
+                # clone most recent analyses
+                rec = s.query(RiskScore).filter(RiskScore.lease_version_id == existing.id).order_by(RiskScore.created_at.desc()).first()
+                if rec:
+                    s.add(RiskScore(lease_version_id=v.id, payload=rec.payload, model=rec.model))
+                ab = s.query(AbnormalityRecord).filter(AbnormalityRecord.lease_version_id == existing.id).order_by(AbnormalityRecord.created_at.desc()).first()
+                if ab:
+                    s.add(AbnormalityRecord(lease_version_id=v.id, payload=ab.payload, model=ab.model))
+            except Exception:
+                pass
+        else:
+            # Enqueue background processing
+            try:
+                q = get_queue()
+                q.enqueue(process_version, v.id)
+            except Exception:
+                pass
         s.flush()
-        # Enqueue background processing
-        try:
-            q = get_queue()
-            q.enqueue(process_version, v.id)
-        except Exception:
-            pass
         return LeaseVersionOut(id=v.id, project_id=v.project_id, label=v.label, status=v.status.value, created_at=v.created_at.isoformat() if v.created_at else None)
 
 
