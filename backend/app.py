@@ -62,7 +62,7 @@ def create_project(body: ProjectCreate):
 def list_projects():
     with session_scope() as s:
         rows = s.execute(select(Project)).scalars().all()
-        return [ProjectOut(id=r.id, name=r.name, description=r.description) for r in rows]
+        return [ProjectOut(id=r.id, name=r.name, description=r.description, current_version_id=r.current_version_id) for r in rows]
 
 
 @app.get("/v1/projects/{project_id}", response_model=ProjectOut)
@@ -71,7 +71,7 @@ def get_project(project_id: str):
         p = s.get(Project, project_id)
         if not p:
             return {"id": project_id, "name": "", "description": None}
-        return ProjectOut(id=p.id, name=p.name, description=p.description)
+        return ProjectOut(id=p.id, name=p.name, description=p.description, current_version_id=p.current_version_id)
 
 
 @app.post("/v1/projects/{project_id}/versions", response_model=LeaseVersionOut)
@@ -80,6 +80,10 @@ def create_version(project_id: str, body: VersionCreate):
         v = LeaseVersion(project_id=project_id, label=body.label, status=LeaseVersionStatus.uploaded)
         s.add(v)
         s.flush()
+        # Optionally set as current
+        p = s.get(Project, project_id)
+        if p and not p.current_version_id:
+            p.current_version_id = v.id
         return LeaseVersionOut(id=v.id, project_id=v.project_id, label=v.label, status=v.status.value, created_at=v.created_at.isoformat() if v.created_at else None)
 
 
@@ -133,6 +137,10 @@ async def upload_version_file(project_id: str, label: str | None = Form(default=
                     s.add(AbnormalityRecord(lease_version_id=v.id, payload=ab.payload, model=ab.model))
             except Exception:
                 pass
+            # Set as current version by default for convenience
+            p = s.get(Project, project_id)
+            if p:
+                p.current_version_id = v.id
         else:
             # Enqueue background processing
             try:
@@ -210,6 +218,13 @@ def clauses_version(version_id: str, topic: str = Form(...)):
         from backend.lease_chain import get_clauses_for_topic
         res = get_clauses_for_topic(pdf_path, topic)
         return ClausesResponse(clauses=res)
+
+
+# Placeholder diff endpoint (skeleton)
+@app.post("/v1/diff", response_model=dict)
+def diff_versions(base_version_id: str = Form(...), compare_version_id: str = Form(...)):
+    # TODO: implement clause mapping and semantic diff; return structured changes
+    return {"base_version_id": base_version_id, "compare_version_id": compare_version_id, "changes": []}
 
 @app.post("/upload", response_model=UploadResponse)
 async def upload_file(file: UploadFile = File(...)):

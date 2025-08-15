@@ -40,6 +40,7 @@ class ProjectOut(BaseModel):
     id: str
     name: str
     description: Optional[str] = None
+    current_version_id: Optional[str] = None
 
 
 class VersionCreate(BaseModel):
@@ -73,5 +74,18 @@ class AbnormalitiesOut(BaseModel):
     payload: List[Abnormality]
     model: Optional[str] = None
     created_at: Optional[str] = None
+
+
+class DiffChange(BaseModel):
+    type: Literal["added", "removed", "modified"]
+    clause_no: Optional[str] = None
+    before: Optional[str] = None
+    after: Optional[str] = None
+
+
+class DiffResponse(BaseModel):
+    base_version_id: str
+    compare_version_id: str
+    changes: List[DiffChange]
 
 

@@ -34,6 +34,7 @@ class Project(Base):
     owner_id = Column(String, ForeignKey("users.id"), nullable=True)
     name = Column(String, nullable=False)
     description = Column(Text, nullable=True)
+    current_version_id = Column(String, ForeignKey("lease_versions.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow)
 
