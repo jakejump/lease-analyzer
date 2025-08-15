@@ -12,6 +12,9 @@ openai==1.75.0
 # Vector store
 faiss-cpu==1.10.0
 
+# Database
+SQLAlchemy==2.0.36
+
 # PDF parsing (used by PyPDFLoader)
 pypdf==5.4.0
 # Higher-fidelity PDF text extraction
