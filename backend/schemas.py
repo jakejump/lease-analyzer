@@ -54,3 +54,22 @@ class LeaseVersionOut(BaseModel):
     created_at: Optional[str] = None
 
 
+class VersionStatusResponse(BaseModel):
+    id: str
+    status: str
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+class RiskOut(BaseModel):
+    payload: Dict[str, RiskAssessment]
+    model: Optional[str] = None
+    created_at: Optional[str] = None
+
+
+class AbnormalitiesOut(BaseModel):
+    payload: List[Abnormality]
+    model: Optional[str] = None
+    created_at: Optional[str] = None
+
+

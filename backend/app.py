@@ -11,7 +11,7 @@ from backend.lease_chain import (
 from backend.paths import _doc_dir
 from backend.state import LATEST_DOC_ID as _LATEST_DOC_ID
 from backend.config import get_allowed_origins, APP_VERSION
-from backend.schemas import UploadResponse, AskResponse, AbnormalitiesResponse, ClausesResponse, ProjectCreate, ProjectOut, VersionCreate, LeaseVersionOut
+from backend.schemas import UploadResponse, AskResponse, AbnormalitiesResponse, ClausesResponse, ProjectCreate, ProjectOut, VersionCreate, LeaseVersionOut, VersionStatusResponse, RiskOut, AbnormalitiesOut
 from backend.db import session_scope
 from backend.models import Base, Project, LeaseVersion, LeaseVersionStatus, RiskScore, AbnormalityRecord
 from sqlalchemy import select
@@ -86,6 +86,33 @@ async def upload_version_file(project_id: str, label: str | None = Form(default=
         except Exception:
             pass
         return LeaseVersionOut(id=v.id, project_id=v.project_id, label=v.label, status=v.status.value, created_at=v.created_at.isoformat() if v.created_at else None)
+
+
+@app.get("/v1/versions/{version_id}/status", response_model=VersionStatusResponse)
+def get_version_status(version_id: str):
+    with session_scope() as s:
+        v = s.get(LeaseVersion, version_id)
+        if not v:
+            return {"id": version_id, "status": "not_found"}
+        return VersionStatusResponse(id=v.id, status=v.status.value, created_at=v.created_at.isoformat() if v.created_at else None, updated_at=v.updated_at.isoformat() if v.updated_at else None)
+
+
+@app.get("/v1/versions/{version_id}/risk", response_model=RiskOut)
+def get_version_risk(version_id: str):
+    with session_scope() as s:
+        rec = s.query(RiskScore).filter(RiskScore.lease_version_id == version_id).order_by(RiskScore.created_at.desc()).first()
+        if not rec:
+            return RiskOut(payload={})
+        return RiskOut(payload=json.loads(rec.payload), model=rec.model, created_at=rec.created_at.isoformat() if rec.created_at else None)
+
+
+@app.get("/v1/versions/{version_id}/abnormalities", response_model=AbnormalitiesOut)
+def get_version_abnormalities(version_id: str):
+    with session_scope() as s:
+        rec = s.query(AbnormalityRecord).filter(AbnormalityRecord.lease_version_id == version_id).order_by(AbnormalityRecord.created_at.desc()).first()
+        if not rec:
+            return AbnormalitiesOut(payload=[])
+        return AbnormalitiesOut(payload=json.loads(rec.payload), model=rec.model, created_at=rec.created_at.isoformat() if rec.created_at else None)
 
 @app.post("/upload", response_model=UploadResponse)
 async def upload_file(file: UploadFile = File(...)):
