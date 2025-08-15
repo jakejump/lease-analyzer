@@ -199,9 +199,7 @@ def extract_text_from_pdf(pdf_path: str) -> str:
         try:
             loader = UnstructuredPDFLoader(path, mode="elements")
             docs = loader.load()
-            return "\n".join(
-                doc.page_content for doc in docs if getattr(doc, "page_content", None)
-            )
+            return "\n".join(doc.page_content for doc in docs if getattr(doc, "page_content", None))
         except Exception as e:
             print("UnstructuredPDFLoader failed:", e)
             return ""
@@ -330,6 +328,45 @@ def _build_text_splitter() -> RecursiveCharacterTextSplitter:
         separators=["\n\n", "\n", ". ", " "]
     )
 
+def _layout_titles_path(doc_id: str) -> Path:
+    return _doc_dir(doc_id) / "layout_titles.json"
+
+def _get_or_build_layout_titles(doc_id: str, pdf_path: str) -> list[dict]:
+    """Extract page-level Title blocks using Unstructured's hi_res pipeline.
+    Falls back to empty list if the model or deps are unavailable.
+    """
+    path = _layout_titles_path(doc_id)
+    if path.exists():
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    try:
+        from unstructured.partition.pdf import partition_pdf
+        elements = partition_pdf(filename=pdf_path, strategy="hi_res", infer_table_structure=False)
+        titles: list[dict] = []
+        for el in elements:
+            name = getattr(el, "category", None) or el.__class__.__name__
+            if str(name).lower() == "title":
+                meta = getattr(el, "metadata", None)
+                page_no = getattr(meta, "page_number", None) if meta else None
+                # Coordinates may be None depending on pipeline
+                coords = getattr(meta, "coordinates", None)
+                titles.append({
+                    "page": int(page_no) if page_no is not None else None,
+                    "text": getattr(el, "text", "") or "",
+                    "coordinates": str(coords) if coords is not None else None,
+                })
+        # Save sidecar
+        try:
+            path.write_text(json.dumps(titles), encoding="utf-8")
+        except Exception:
+            pass
+        return titles
+    except Exception as e:
+        print("Layout title extraction unavailable:", e)
+        return []
+
 def _normalize_line(line: str) -> str:
     # Collapse whitespace and remove stray artifacts for comparison
     return " ".join(line.strip().split())
@@ -427,6 +464,14 @@ def load_lease_docs(pdf_path: str) -> List[Document]:
     # Prefer PyMuPDF for higher-fidelity page extraction
     try:
         page_docs = PyMuPDFLoader(pdf_path).load()
+        # Title detection via ML layout model to refine headers
+        doc_id = _doc_id_from_pdf_path(pdf_path)
+        layout_titles = _get_or_build_layout_titles(doc_id, pdf_path)
+        titles_by_page = {}
+        for t in layout_titles:
+            p = t.get("page")
+            if p is not None:
+                titles_by_page.setdefault(int(p), []).append(t.get("text", "").strip())
         # Remove headers/footers/page numbers using cross-page frequency
         page_texts = [d.page_content for d in page_docs]
         header_set, footer_set = _find_common_header_footer_lines(page_texts)
@@ -438,6 +483,10 @@ def load_lease_docs(pdf_path: str) -> List[Document]:
             for idx, part in enumerate(parts):
                 meta = dict(getattr(d, "metadata", {}))
                 meta.update({"page": meta.get("page", meta.get("page_number")), "chunk": idx})
+                # Attach ML-detected titles for the page if available (helps downstream heuristics)
+                page_num = meta.get("page")
+                if page_num in titles_by_page:
+                    meta["layout_titles"] = titles_by_page[page_num]
                 split_docs.append(Document(page_content=part, metadata=meta))
         if split_docs:
             return split_docs
@@ -446,6 +495,13 @@ def load_lease_docs(pdf_path: str) -> List[Document]:
         try:
             pypdf_loader = PyPDFLoader(pdf_path)
             page_docs = pypdf_loader.load()
+            doc_id = _doc_id_from_pdf_path(pdf_path)
+            layout_titles = _get_or_build_layout_titles(doc_id, pdf_path)
+            titles_by_page = {}
+            for t in layout_titles:
+                p = t.get("page")
+                if p is not None:
+                    titles_by_page.setdefault(int(p), []).append(t.get("text", "").strip())
             page_texts = [d.page_content for d in page_docs]
             header_set, footer_set = _find_common_header_footer_lines(page_texts)
             cleaned_pages = [_clean_page_text(t, header_set, footer_set) for t in page_texts]
@@ -456,6 +512,9 @@ def load_lease_docs(pdf_path: str) -> List[Document]:
                 for idx, part in enumerate(parts):
                     meta = dict(getattr(d, "metadata", {}))
                     meta.update({"page": meta.get("page", meta.get("page_number")), "chunk": idx})
+                    page_num = meta.get("page")
+                    if page_num in titles_by_page:
+                        meta["layout_titles"] = titles_by_page[page_num]
                     split_docs.append(Document(page_content=part, metadata=meta))
             if split_docs:
                 return split_docs
@@ -730,7 +789,7 @@ def get_clauses_for_topic(pdf_path: str, topic: str):
     if not filtered:
         filtered = sorted(doc_scores, key=lambda x: x[1], reverse=True)[:3]
 
-    def _format_clause(raw_text: str) -> str:
+    def _format_clause(raw_text: str, meta: dict | None = None) -> str:
         import re as _re
 
         text = raw_text.strip()
@@ -756,6 +815,26 @@ def get_clauses_for_topic(pdf_path: str, topic: str):
             clause_no = any_num.group(1) if any_num else ""
             clause_title = header_line if is_real_header else ""
 
+        # Use ML layout titles (if present in metadata) to boost heading detection deterministically
+        layout_titles = []
+        if isinstance(meta, dict):
+            layout_titles = [t.strip() for t in meta.get("layout_titles", []) if isinstance(t, str)]
+        def _norm(s: str) -> str:
+            return _re.sub(r"\s+", " ", s or "").strip().lower()
+        norm_header = _norm(header_line)
+        if not is_real_header and layout_titles:
+            for t in layout_titles:
+                nt = _norm(t)
+                starts_with_title = _norm(text).startswith(nt)
+                header_eq_title = norm_header.startswith(nt) or nt.startswith(norm_header)
+                if len(nt) > 4 and (starts_with_title or header_eq_title):
+                    clause_title = t.strip()
+                    num_match = _re.match(r"^(?:Section|Clause|Article)?\s*(\d{1,2}(?:\.\d{1,2})?)\b", text, _re.IGNORECASE)
+                    if num_match:
+                        clause_no = num_match.group(1)
+                    is_real_header = True
+                    break
+
         # Body paragraphs: split by blank lines; ensure each paragraph is one line
         body_text = text
         # Remove the header line from body only if we confidently detected a header
@@ -772,6 +851,8 @@ def get_clauses_for_topic(pdf_path: str, topic: str):
         if clause_title:
             heading_parts.append(clause_title)
         heading = " ".join(heading_parts).strip()
+        # If ML layout titles exist for the page, and the clause title is empty, try to use the first title
+        # Note: this function formats text only; we do not have metadata here, so this fallback is limited.
         if not heading:
             # If we couldn't confidently detect a header, avoid misleading header text
             formatted = "\n".join(["  " + para for para in normalized_paragraphs])
@@ -779,4 +860,33 @@ def get_clauses_for_topic(pdf_path: str, topic: str):
             formatted = heading + ":\n" + "\n".join(["  " + para for para in normalized_paragraphs])
         return formatted.strip()
 
-    return [_format_clause(doc.page_content) for doc, _ in filtered]
+    # Further split within a single chunk if multiple headers exist inline (e.g., "23.02 ... 23.03 ...")
+    def _split_inline_headers(text: str) -> list[str]:
+        import re as _re
+        # Normalize 23,03 -> 23.03
+        t = _re.sub(r"(\d),(\d)", r"\\1.\\2", text)
+        # Boundary: start, newline, or punctuation+space; avoid subsection like (b)
+        pattern = _re.compile(
+            r"(?:(?<=^)|(?<=\n)|(?<=[\.!?]\s))(?=(?:Section|Clause|Article)?\s*\d{1,2}(?:\.\d{1,2})?\s*(?:[:\-\.]\s+)?(?!\())",
+            _re.IGNORECASE,
+        )
+        parts: list[str] = []
+        last = 0
+        for m in pattern.finditer(t):
+            idx = m.start()
+            if idx > last:
+                seg = t[last:idx].strip()
+                if seg:
+                    parts.append(seg)
+            last = idx
+        tail = t[last:].strip()
+        if tail:
+            parts.append(tail)
+        return parts or [text]
+
+    formatted: list[str] = []
+    for doc, _score in filtered:
+        meta = getattr(doc, "metadata", {})
+        for segment in _split_inline_headers(doc.page_content):
+            formatted.append(_format_clause(segment, meta))
+    return formatted
