@@ -244,6 +244,40 @@ def get_version_abnormalities(version_id: str):
         return AbnormalitiesOut(payload=json.loads(rec.payload), model=rec.model, created_at=rec.created_at.isoformat() if rec.created_at else None)
 
 
+@app.get("/v1/versions/{version_id}/summary", response_model=dict)
+def get_version_summary(version_id: str):
+    # Returns combined status + latest risk + latest abnormalities in one response
+    with session_scope() as s:
+        v = s.get(LeaseVersion, version_id)
+        if not v:
+            return {"status": "not_found"}
+        # Status
+        stage = None
+        progress = None
+        try:
+            conn = Redis()
+            data = conn.hgetall(f"version:{version_id}:status")
+            if data:
+                stage = (data.get(b"stage") or b"").decode() or None
+                val = (data.get(b"progress") or b"").decode()
+                progress = int(val) if val.isdigit() else None
+        except Exception:
+            pass
+        # Risk
+        risk_rec = s.query(RiskScore).filter(RiskScore.lease_version_id == version_id).order_by(RiskScore.created_at.desc()).first()
+        risk_payload = json.loads(risk_rec.payload) if risk_rec else {}
+        # Abnormalities
+        abn_rec = s.query(AbnormalityRecord).filter(AbnormalityRecord.lease_version_id == version_id).order_by(AbnormalityRecord.created_at.desc()).first()
+        abn_payload = json.loads(abn_rec.payload) if abn_rec else []
+        return {
+            "status": v.status.value,
+            "stage": stage,
+            "progress": progress,
+            "risk": risk_payload,
+            "abnormalities": abn_payload,
+        }
+
+
 @app.post("/v1/versions/{version_id}/ask", response_model=AskResponse)
 def ask_version(version_id: str, question: str = Form(...)):
     with session_scope() as s:
