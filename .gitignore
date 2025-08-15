@@ -2,3 +2,14 @@ node_modules
 .next
 .env
 .DS_Store
+
+# local env/build/cache
+.venv/
+node_modules/
+frontend/node_modules/
+frontend/.next/
+.next/
+temp/
+**/__pycache__/
+*.pyc
+.DS_Store
