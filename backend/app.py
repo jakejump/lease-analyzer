@@ -13,8 +13,9 @@ from backend.state import LATEST_DOC_ID as _LATEST_DOC_ID
 from backend.config import get_allowed_origins, APP_VERSION
 from backend.schemas import UploadResponse, AskResponse, AbnormalitiesResponse, ClausesResponse, ProjectCreate, ProjectOut, VersionCreate, LeaseVersionOut
 from backend.db import session_scope
-from backend.models import Base, Project, LeaseVersion, LeaseVersionStatus
+from backend.models import Base, Project, LeaseVersion, LeaseVersionStatus, RiskScore, AbnormalityRecord
 from sqlalchemy import select
+import json
 import shutil, os
 
 app = FastAPI()
@@ -76,6 +77,16 @@ async def upload_file(file: UploadFile = File(...)):
     # Prebuild vector index so first query is instant
     _get_or_build_vectorstore_for_doc(doc_id)
     risks = evaluate_general_risks(target_path)
+    # Persist risk analysis to DB (best effort)
+    try:
+        with session_scope() as s:
+            # find or create a version for ad-hoc usage: fallback projectless
+            v = s.execute(select(LeaseVersion).order_by(LeaseVersion.created_at.desc())).scalars().first()
+            if v:
+                rec = RiskScore(lease_version_id=v.id, payload=json.dumps(risks), model="gpt-4o")
+                s.add(rec)
+    except Exception:
+        pass
     return {"message": "File uploaded successfully.", "doc_id": doc_id, "risks": risks}
 
 @app.post("/ask", response_model=AskResponse)
@@ -104,6 +115,14 @@ async def fetch_abnormalities(doc_id: str | None = Form(default=None)):
     if not os.path.exists(pdf_path):
         return {"abnormalities": ["Document not found on server. Please upload again."]}
     abnormalities = detect_abnormalities(pdf_path)
+    try:
+        with session_scope() as s:
+            v = s.execute(select(LeaseVersion).order_by(LeaseVersion.created_at.desc())).scalars().first()
+            if v:
+                rec = AbnormalityRecord(lease_version_id=v.id, payload=json.dumps(abnormalities), model="gpt-4o")
+                s.add(rec)
+    except Exception:
+        pass
     print(abnormalities)
     return {"abnormalities": abnormalities}
 

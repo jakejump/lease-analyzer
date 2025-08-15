@@ -75,3 +75,25 @@ class LeaseVersion(Base):
     project = relationship("Project")
 
 
+class RiskScore(Base):
+    __tablename__ = "risk_scores"
+    id = Column(String, primary_key=True, default=_id)
+    lease_version_id = Column(String, ForeignKey("lease_versions.id"), nullable=False)
+    payload = Column(Text, nullable=False)  # JSON string
+    model = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    version = relationship("LeaseVersion")
+
+
+class AbnormalityRecord(Base):
+    __tablename__ = "abnormalities"
+    id = Column(String, primary_key=True, default=_id)
+    lease_version_id = Column(String, ForeignKey("lease_versions.id"), nullable=False)
+    payload = Column(Text, nullable=False)  # JSON string
+    model = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    version = relationship("LeaseVersion")
+
+
