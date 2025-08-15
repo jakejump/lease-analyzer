@@ -56,6 +56,7 @@ def process_version(version_id: str) -> None:
             abn = detect_abnormalities(target_pdf)
             s.add(RiskScore(lease_version_id=version_id, payload=json.dumps(risks), model="gpt-4o"))
             s.add(AbnormalityRecord(lease_version_id=version_id, payload=json.dumps(abn), model="gpt-4o"))
+            v.doc_id = doc_id
             v.status = LeaseVersionStatus.processed
             _set_progress(version_id, "done", 100)
         except Exception:

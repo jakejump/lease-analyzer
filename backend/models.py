@@ -62,6 +62,7 @@ class LeaseVersion(Base):
     id = Column(String, primary_key=True, default=_id)
     project_id = Column(String, ForeignKey("projects.id"), nullable=False)
     label = Column(String, nullable=True)
+    doc_id = Column(String, nullable=True)
     content_hash = Column(String, nullable=True)
     file_url = Column(String, nullable=True)
     pages_url = Column(String, nullable=True)

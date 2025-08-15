@@ -159,6 +159,29 @@ def get_version_abnormalities(version_id: str):
             return AbnormalitiesOut(payload=[])
         return AbnormalitiesOut(payload=json.loads(rec.payload), model=rec.model, created_at=rec.created_at.isoformat() if rec.created_at else None)
 
+
+@app.post("/v1/versions/{version_id}/ask", response_model=AskResponse)
+def ask_version(version_id: str, question: str = Form(...)):
+    with session_scope() as s:
+        v = s.get(LeaseVersion, version_id)
+        if not v or not v.doc_id:
+            return {"answer": "Version not processed yet."}
+        pdf_path = str(_doc_dir(v.doc_id) / "lease.pdf")
+        ans = run_rag_pipeline(pdf_path, question)
+        return AskResponse(answer=ans)
+
+
+@app.post("/v1/versions/{version_id}/clauses", response_model=ClausesResponse)
+def clauses_version(version_id: str, topic: str = Form(...)):
+    with session_scope() as s:
+        v = s.get(LeaseVersion, version_id)
+        if not v or not v.doc_id:
+            return {"clauses": []}
+        pdf_path = str(_doc_dir(v.doc_id) / "lease.pdf")
+        from backend.lease_chain import get_clauses_for_topic
+        res = get_clauses_for_topic(pdf_path, topic)
+        return ClausesResponse(clauses=res)
+
 @app.post("/upload", response_model=UploadResponse)
 async def upload_file(file: UploadFile = File(...)):
     import os
