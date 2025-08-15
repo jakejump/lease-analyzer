@@ -1,8 +1,12 @@
 
 from fastapi import FastAPI, File, UploadFile, Form
 from fastapi.middleware.cors import CORSMiddleware
-from backend.lease_chain import run_rag_pipeline, evaluate_general_risks, load_lease_docs, _get_or_build_vectorstore_for_doc, _doc_dir, _compute_doc_id_for_file, _LATEST_DOC_ID
+from backend.lease_chain import run_rag_pipeline, evaluate_general_risks, load_lease_docs, _compute_doc_id_for_file
+from backend.vector_store import get_or_build_vectorstore_for_doc as _get_or_build_vectorstore_for_doc
+from backend.paths import _doc_dir
+from backend.state import LATEST_DOC_ID as _LATEST_DOC_ID
 from backend.config import get_allowed_origins, APP_VERSION
+from backend.schemas import UploadResponse, AskResponse, AbnormalitiesResponse, ClausesResponse
 import shutil, os
 
 app = FastAPI()
@@ -21,7 +25,7 @@ app.add_middleware(
 def test_cors():
     return {"message": "CORS is working"}
 
-@app.post("/upload")
+@app.post("/upload", response_model=UploadResponse)
 async def upload_file(file: UploadFile = File(...)):
     import os
     os.makedirs("temp", exist_ok=True)
@@ -40,10 +44,9 @@ async def upload_file(file: UploadFile = File(...)):
     risks = evaluate_general_risks(target_path)
     return {"message": "File uploaded successfully.", "doc_id": doc_id, "risks": risks}
 
-@app.post("/ask")
+@app.post("/ask", response_model=AskResponse)
 async def ask_question(question: str = Form(...), doc_id: str | None = Form(default=None)):
     import os
-    from backend.lease_chain import _LATEST_DOC_ID, _doc_dir
     effective_doc_id = doc_id or _LATEST_DOC_ID
     if not effective_doc_id:
         return {"answer": "No document loaded yet. Please upload a PDF first."}
@@ -57,10 +60,9 @@ from fastapi import Body
 
 from backend.lease_chain import get_clauses_for_topic, detect_abnormalities
 
-@app.post("/abnormalities")
+@app.post("/abnormalities", response_model=AbnormalitiesResponse)
 async def fetch_abnormalities(doc_id: str | None = Form(default=None)):
     import os
-    from backend.lease_chain import _LATEST_DOC_ID, _doc_dir
     effective_doc_id = doc_id or _LATEST_DOC_ID
     if not effective_doc_id:
         return {"abnormalities": ["No document loaded yet. Please upload a PDF first."]}
@@ -71,10 +73,9 @@ async def fetch_abnormalities(doc_id: str | None = Form(default=None)):
     print(abnormalities)
     return {"abnormalities": abnormalities}
 
-@app.post("/clauses")
+@app.post("/clauses", response_model=ClausesResponse)
 async def fetch_clauses(topic: str = Form(...), doc_id: str | None = Form(default=None)):
     import os
-    from backend.lease_chain import _LATEST_DOC_ID, _doc_dir
     effective_doc_id = doc_id or _LATEST_DOC_ID
     if not effective_doc_id:
         return {"clauses": ["No document loaded yet. Please upload a PDF first."]}
