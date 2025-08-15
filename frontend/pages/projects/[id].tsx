@@ -14,6 +14,7 @@ export default function ProjectDetail() {
   const [label, setLabel] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [settingCurrent, setSettingCurrent] = useState<string | null>(null);
 
   const loadProject = async () => {
     const res = await fetch(`${API_BASE}/v1/projects/${id}`);
@@ -44,11 +45,23 @@ export default function ProjectDetail() {
     setUploading(false);
   };
 
+  const setCurrent = async (versionId: string) => {
+    setSettingCurrent(versionId);
+    const form = new FormData();
+    form.append("current_version_id", versionId);
+    await fetch(`${API_BASE}/v1/projects/${id}`, { method: "PATCH", body: form });
+    await loadProject();
+    setSettingCurrent(null);
+  };
+
   return (
     <main className="min-h-screen p-6 space-y-4">
       <a className="text-blue-600 underline" href="/projects">← Back</a>
       <h1 className="text-2xl font-semibold">{project?.name || "Project"}</h1>
       {project?.description && <p className="text-gray-700">{project.description}</p>}
+      <div>
+        <a className="text-blue-600 underline" href={`/projects/${id}/diff`}>Compare Versions (Diff)</a>
+      </div>
 
       <div className="border p-4 rounded">
         <h2 className="font-medium mb-2">Upload Version</h2>
@@ -68,8 +81,20 @@ export default function ProjectDetail() {
                 <div>
                   <div className="font-medium">{v.label || v.id}</div>
                   <div className="text-sm text-gray-600">Status: {v.status} {v.created_at ? `• ${v.created_at}` : ""}</div>
+                  {project?.current_version_id === v.id && (
+                    <div className="text-xs text-green-700">Current</div>
+                  )}
                 </div>
-                <a className="text-blue-600 underline" href={`/projects/${id}/versions/${v.id}`}>Open</a>
+                <div className="flex items-center gap-3">
+                  <a className="text-blue-600 underline" href={`/projects/${id}/versions/${v.id}`}>Open</a>
+                  <button
+                    className="bg-gray-200 px-2 py-1 rounded"
+                    onClick={() => setCurrent(v.id)}
+                    disabled={settingCurrent === v.id}
+                  >
+                    {settingCurrent === v.id ? "Setting..." : "Set Current"}
+                  </button>
+                </div>
               </div>
             </li>
           ))}
