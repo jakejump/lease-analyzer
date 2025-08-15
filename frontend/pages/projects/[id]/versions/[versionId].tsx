@@ -19,20 +19,12 @@ export default function VersionDetail() {
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
 
-  const pollStatus = async () => {
-    const res = await fetch(`${API_BASE}/v1/versions/${versionId}/status`);
+  const pollSummary = async () => {
+    const res = await fetch(`${API_BASE}/v1/versions/${versionId}/summary`);
     const data = await res.json();
-    setStatus(data);
-  };
-
-  const fetchRisk = async () => {
-    const res = await fetch(`${API_BASE}/v1/versions/${versionId}/risk`);
-    setRisk(await res.json());
-  };
-
-  const fetchAbnorm = async () => {
-    const res = await fetch(`${API_BASE}/v1/versions/${versionId}/abnormalities`);
-    setAbnorm(await res.json());
+    setStatus({ id: String(versionId), status: data?.status || "", stage: data?.stage, progress: data?.progress });
+    if (data?.risk) setRisk({ payload: data.risk });
+    if (data?.abnormalities) setAbnorm({ payload: data.abnormalities });
   };
 
   const fetchClauses = async () => {
@@ -53,10 +45,8 @@ export default function VersionDetail() {
 
   useEffect(() => {
     if (!versionId) return;
-    pollStatus();
-    fetchRisk();
-    fetchAbnorm();
-    const t = setInterval(pollStatus, 3000);
+    pollSummary();
+    const t = setInterval(pollSummary, 3000);
     return () => clearInterval(t);
   }, [versionId]);
 
@@ -66,7 +56,10 @@ export default function VersionDetail() {
       <h1 className="text-2xl font-semibold">Version {versionId}</h1>
 
       <div className="border p-4 rounded">
-        <div>Status: {status?.status} {status?.stage ? `• ${status.stage}` : ""} {status?.progress ? `• ${status.progress}%` : ""}</div>
+        <div className="flex items-center gap-3">
+          <span>Status: {status?.status} {status?.stage ? `• ${status.stage}` : ""} {status?.progress ? `• ${status.progress}%` : ""}</span>
+          <button className="bg-gray-200 px-2 py-1 rounded text-sm" onClick={pollSummary}>Refresh</button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
