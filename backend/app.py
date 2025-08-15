@@ -17,6 +17,7 @@ from backend.models import Base, Project, LeaseVersion, LeaseVersionStatus, Risk
 from sqlalchemy import select
 import json
 from backend.storage import put_file
+from backend.jobs import get_queue, process_version
 import shutil, os
 
 app = FastAPI()
@@ -78,6 +79,12 @@ async def upload_version_file(project_id: str, label: str | None = Form(default=
         file_url = put_file(tmp_path, rel)
         v.file_url = file_url
         s.flush()
+        # Enqueue background processing
+        try:
+            q = get_queue()
+            q.enqueue(process_version, v.id)
+        except Exception:
+            pass
         return LeaseVersionOut(id=v.id, project_id=v.project_id, label=v.label, status=v.status.value, created_at=v.created_at.isoformat() if v.created_at else None)
 
 @app.post("/upload", response_model=UploadResponse)

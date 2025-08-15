@@ -14,6 +14,8 @@ faiss-cpu==1.10.0
 
 # Database
 SQLAlchemy==2.0.36
+redis==5.0.7
+rq==1.16.2
 
 # PDF parsing (used by PyPDFLoader)
 pypdf==5.4.0
