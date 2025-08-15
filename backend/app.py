@@ -220,11 +220,20 @@ def clauses_version(version_id: str, topic: str = Form(...)):
         return ClausesResponse(clauses=res)
 
 
-# Placeholder diff endpoint (skeleton)
+from backend.diff import diff_pdfs
+
+
 @app.post("/v1/diff", response_model=dict)
 def diff_versions(base_version_id: str = Form(...), compare_version_id: str = Form(...)):
-    # TODO: implement clause mapping and semantic diff; return structured changes
-    return {"base_version_id": base_version_id, "compare_version_id": compare_version_id, "changes": []}
+    with session_scope() as s:
+        base_v = s.get(LeaseVersion, base_version_id)
+        compare_v = s.get(LeaseVersion, compare_version_id)
+        if not base_v or not compare_v or not base_v.doc_id or not compare_v.doc_id:
+            return {"base_version_id": base_version_id, "compare_version_id": compare_version_id, "changes": []}
+        base_pdf = str(_doc_dir(base_v.doc_id) / "lease.pdf")
+        compare_pdf = str(_doc_dir(compare_v.doc_id) / "lease.pdf")
+        changes = diff_pdfs(base_pdf, compare_pdf)
+        return {"base_version_id": base_version_id, "compare_version_id": compare_version_id, "changes": changes}
 
 @app.post("/upload", response_model=UploadResponse)
 async def upload_file(file: UploadFile = File(...)):
