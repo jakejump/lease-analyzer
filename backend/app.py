@@ -18,6 +18,7 @@ from sqlalchemy import select
 import json
 from backend.storage import put_file
 from backend.jobs import get_queue, process_version
+from backend.db import engine
 import shutil, os
 
 app = FastAPI()
@@ -35,6 +36,15 @@ app.add_middleware(
 @app.get("/test-cors")
 def test_cors():
     return {"message": "CORS is working"}
+
+
+@app.on_event("startup")
+def on_startup() -> None:
+    # Auto-create tables in dev; in prod use Alembic migrations
+    try:
+        Base.metadata.create_all(bind=engine)
+    except Exception:
+        pass
 
 
 # Projects
@@ -61,6 +71,22 @@ def create_version(project_id: str, body: VersionCreate):
         s.add(v)
         s.flush()
         return LeaseVersionOut(id=v.id, project_id=v.project_id, label=v.label, status=v.status.value, created_at=v.created_at.isoformat() if v.created_at else None)
+
+
+@app.get("/v1/projects/{project_id}/versions", response_model=list[LeaseVersionOut])
+def list_versions(project_id: str):
+    with session_scope() as s:
+        rows = s.query(LeaseVersion).filter(LeaseVersion.project_id == project_id).order_by(LeaseVersion.created_at.desc()).all()
+        return [
+            LeaseVersionOut(
+                id=r.id,
+                project_id=r.project_id,
+                label=r.label,
+                status=r.status.value,
+                created_at=r.created_at.isoformat() if r.created_at else None,
+            )
+            for r in rows
+        ]
 
 
 @app.post("/v1/projects/{project_id}/versions/upload", response_model=LeaseVersionOut)
