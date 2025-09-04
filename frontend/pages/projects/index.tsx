@@ -1,81 +1,69 @@
 import { useEffect, useState } from "react";
+import Link from "next/link";
+import { api, ProjectOut } from "../../lib/api";
 
-type Project = {
-  id: string;
-  name: string;
-  description?: string | null;
-  current_version_id?: string | null;
-};
-
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000";
-
-export default function ProjectsPage() {
-  const [projects, setProjects] = useState<Project[]>([]);
+export default function ProjectsIndexPage() {
+  const [projects, setProjects] = useState<ProjectOut[]>([]);
+  const [loading, setLoading] = useState(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [loading, setLoading] = useState(false);
 
-  const loadProjects = async () => {
-    const res = await fetch(`${API_BASE}/v1/projects`);
-    const data = await res.json();
-    setProjects(data || []);
-  };
-
-  useEffect(() => {
-    loadProjects();
-  }, []);
-
-  const createProject = async () => {
-    if (!name.trim()) return;
+  const fetchProjects = async () => {
     setLoading(true);
-    await fetch(`${API_BASE}/v1/projects`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, description }),
-    });
-    setName("");
-    setDescription("");
-    await loadProjects();
+    const res = await api.get<ProjectOut[]>("/v1/projects");
+    if (res.status < 400) setProjects(res.data || []);
     setLoading(false);
   };
 
-  return (
-    <main className="min-h-screen p-6">
-      <h1 className="text-2xl font-semibold mb-4">Projects</h1>
-      <div className="border p-4 rounded mb-6">
-        <h2 className="font-medium mb-2">Create Project</h2>
-        <input
-          className="border p-2 mr-2"
-          placeholder="Project name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-        />
-        <input
-          className="border p-2 mr-2"
-          placeholder="Description (optional)"
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-        />
-        <button className="bg-blue-600 text-white px-3 py-2 rounded" onClick={createProject} disabled={loading}>
-          {loading ? "Creating..." : "Create"}
-        </button>
-      </div>
+  useEffect(() => {
+    fetchProjects();
+  }, []);
 
-      <ul className="space-y-3">
-        {projects.map((p) => (
-          <li key={p.id} className="border rounded p-4">
-            <div className="flex items-center justify-between">
-              <div>
+  const createProject = async () => {
+    const res = await api.post<ProjectOut>("/v1/projects", { name, description });
+    if (res.status < 400 && res.data?.id) {
+      setName("");
+      setDescription("");
+      setProjects([res.data, ...projects]);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-900 text-gray-100 px-6 py-8">
+      <div className="max-w-5xl mx-auto space-y-6">
+        <div className="flex items-end gap-3">
+          <div className="flex-1">
+            <label className="block text-sm text-gray-400">Project name</label>
+            <input className="w-full bg-gray-800 border border-gray-700 rounded p-2" value={name} onChange={(e) => setName(e.target.value)} />
+          </div>
+          <div className="flex-1">
+            <label className="block text-sm text-gray-400">Description</label>
+            <input className="w-full bg-gray-800 border border-gray-700 rounded p-2" value={description} onChange={(e) => setDescription(e.target.value)} />
+          </div>
+          <button onClick={createProject} disabled={!name} className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded">
+            Create
+          </button>
+        </div>
+
+        <div className="border-t border-gray-800 pt-6">
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="text-lg font-semibold">Projects</h2>
+            {loading && <span className="text-sm text-gray-400">Loading...</span>}
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {projects.map((p) => (
+              <Link key={p.id} href={`/projects/${p.id}`} className="block border border-gray-800 rounded p-4 bg-gray-800/60 hover:bg-gray-800">
                 <div className="font-medium">{p.name}</div>
-                {p.description && <div className="text-sm text-gray-600">{p.description}</div>}
-              </div>
-              <a className="text-blue-600 underline" href={`/projects/${p.id}`}>Open</a>
-            </div>
-          </li>
-        ))}
-      </ul>
-    </main>
+                {p.description && <div className="text-sm text-gray-400 mt-1 line-clamp-2">{p.description}</div>}
+              </Link>
+            ))}
+            {projects.length === 0 && !loading && <div className="text-gray-400">No projects yet.</div>}
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
+
 
 

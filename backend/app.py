@@ -13,14 +13,15 @@ from backend.state import LATEST_DOC_ID as _LATEST_DOC_ID
 from backend.config import get_allowed_origins, APP_VERSION
 from backend.schemas import UploadResponse, AskResponse, AbnormalitiesResponse, ClausesResponse, ProjectCreate, ProjectOut, VersionCreate, LeaseVersionOut, VersionStatusResponse, RiskOut, AbnormalitiesOut
 from backend.db import session_scope
-from backend.models import Base, Project, LeaseVersion, LeaseVersionStatus, RiskScore, AbnormalityRecord
+from backend.models import Project, LeaseVersion, LeaseVersionStatus, RiskScore, AbnormalityRecord
 from sqlalchemy import select
 import json
 from backend.storage import put_file
 from backend.jobs import get_queue, process_version
 from redis import Redis
-from backend.db import engine
+from backend.db import engine, Base
 import shutil, os
+from backend.state import DOC_CACHE as _DOC_CACHE
 
 app = FastAPI()
 
@@ -118,6 +119,88 @@ def list_versions(project_id: str):
         ]
 
 
+@app.patch("/v1/versions/{version_id}", response_model=LeaseVersionOut)
+def update_version(version_id: str, label: str | None = Form(default=None)):
+    with session_scope() as s:
+        v = s.get(LeaseVersion, version_id)
+        if not v:
+            return {"id": version_id, "project_id": "", "label": None, "status": "failed"}
+        if label is not None:
+            v.label = label
+        return LeaseVersionOut(id=v.id, project_id=v.project_id, label=v.label, status=v.status.value, created_at=v.created_at.isoformat() if v.created_at else None)
+
+
+@app.post("/v1/versions/{version_id}/reupload", response_model=LeaseVersionOut)
+async def reupload_version(version_id: str, file: UploadFile = File(...)):
+    # Replace the file for an existing version and trigger processing if needed
+    os.makedirs("temp", exist_ok=True)
+    tmp_path = f"temp/{file.filename or 'lease.pdf'}"
+    print(f"[reupload] receiving file to {tmp_path}")
+    with open(tmp_path, "wb") as f:
+        shutil.copyfileobj(file.file, f)
+    import hashlib
+    with open(tmp_path, "rb") as f:
+        content = f.read()
+    content_hash = hashlib.md5(content).hexdigest()
+    print(f"[reupload] content_hash={content_hash}")
+    with session_scope() as s:
+        v = s.get(LeaseVersion, version_id)
+        if not v:
+            return {"id": version_id, "project_id": "", "label": None, "status": "failed"}
+        v.content_hash = content_hash
+        # Store under storage/projects/{project_id}/{version_id}/lease.pdf
+        rel = f"projects/{v.project_id}/{v.id}/lease.pdf"
+        file_url = put_file(tmp_path, rel)
+        print(f"[reupload] stored file to {file_url}")
+        v.file_url = file_url
+        # Ensure downstream processing sees file_url and metadata
+        try:
+            s.commit()
+            print(f"[reupload] committed DB changes for {v.id}")
+        except Exception:
+            pass
+        # If another processed version has same content, reuse doc_id and clone analyses
+        existing = s.query(LeaseVersion).filter(LeaseVersion.content_hash == content_hash, LeaseVersion.doc_id.isnot(None)).order_by(LeaseVersion.created_at.desc()).first()
+        if existing and existing.doc_id:
+            v.doc_id = existing.doc_id
+            v.status = LeaseVersionStatus.processed
+            print(f"[reupload] reused existing processed doc_id={v.doc_id}")
+            try:
+                rec = s.query(RiskScore).filter(RiskScore.lease_version_id == existing.id).order_by(RiskScore.created_at.desc()).first()
+                if rec:
+                    s.add(RiskScore(lease_version_id=v.id, payload=rec.payload, model=rec.model))
+                ab = s.query(AbnormalityRecord).filter(AbnormalityRecord.lease_version_id == existing.id).order_by(AbnormalityRecord.created_at.desc()).first()
+                if ab:
+                    s.add(AbnormalityRecord(lease_version_id=v.id, payload=ab.payload, model=ab.model))
+            except Exception:
+                pass
+        else:
+            # Trigger processing for this version without changing DB enum to a non-existent value
+            import os as _os
+            if (_os.getenv("PROCESS_INLINE", "").lower() in ("1", "true", "yes")):
+                # In dev, run inline for immediate results
+                try:
+                    print(f"[reupload] PROCESS_INLINE=true; starting inline process_version for {v.id}")
+                    process_version(v.id)
+                except Exception:
+                    print("[reupload] inline processing failed", flush=True)
+                    pass
+            else:
+                try:
+                    q = get_queue()
+                    q.enqueue(process_version, v.id)
+                    print(f"[reupload] enqueued version {v.id} for processing")
+                except Exception:
+                    try:
+                        import threading as _threading
+                        _threading.Thread(target=process_version, args=(v.id,), daemon=True).start()
+                        print(f"[reupload] started background thread for processing {v.id}")
+                    except Exception:
+                        print("[reupload] failed to start background processing", flush=True)
+                        pass
+        s.flush()
+        return LeaseVersionOut(id=v.id, project_id=v.project_id, label=v.label, status=v.status.value, created_at=v.created_at.isoformat() if v.created_at else None)
+
 @app.get("/v1/projects/{project_id}/versions/status", response_model=list[VersionStatusResponse])
 def list_versions_status(project_id: str):
     with session_scope() as s:
@@ -155,46 +238,53 @@ async def upload_version_file(project_id: str, label: str | None = Form(default=
     # Save raw PDF into storage
     os.makedirs("temp", exist_ok=True)
     tmp_path = f"temp/{file.filename or 'lease.pdf'}"
+    print(f"[upload] receiving file to {tmp_path}")
     with open(tmp_path, "wb") as f:
         shutil.copyfileobj(file.file, f)
-    # Compute content hash for dedupe
-    import hashlib
-    with open(tmp_path, "rb") as f:
-        content = f.read()
-    content_hash = hashlib.md5(content).hexdigest()
     with session_scope() as s:
-        existing = s.query(LeaseVersion).filter(LeaseVersion.content_hash == content_hash, LeaseVersion.doc_id.isnot(None)).order_by(LeaseVersion.created_at.desc()).first()
-        v = LeaseVersion(project_id=project_id, label=label, status=LeaseVersionStatus.uploaded, content_hash=content_hash)
+        v = LeaseVersion(project_id=project_id, label=label, status=LeaseVersionStatus.uploaded)
         s.add(v)
         s.flush()
         # Store file under storage/projects/{project_id}/{version_id}/lease.pdf
         rel = f"projects/{project_id}/{v.id}/lease.pdf"
         file_url = put_file(tmp_path, rel)
+        print(f"[upload] stored file to {file_url}")
         v.file_url = file_url
-        if existing and existing.doc_id:
-            v.doc_id = existing.doc_id
-            v.status = LeaseVersionStatus.processed
+        # Ensure downstream processing can load this version
+        try:
+            s.commit()
+            print(f"[upload] committed DB changes for {v.id}")
+        except Exception:
+            pass
+        # Always process this version as new (no dedupe)
+        # Keep DB status as 'uploaded' while processing; use Redis stage/progress for live updates
+        import os as _os
+        if (_os.getenv("PROCESS_INLINE", "").lower() in ("1", "true", "yes")):
             try:
-                # clone most recent analyses
-                rec = s.query(RiskScore).filter(RiskScore.lease_version_id == existing.id).order_by(RiskScore.created_at.desc()).first()
-                if rec:
-                    s.add(RiskScore(lease_version_id=v.id, payload=rec.payload, model=rec.model))
-                ab = s.query(AbnormalityRecord).filter(AbnormalityRecord.lease_version_id == existing.id).order_by(AbnormalityRecord.created_at.desc()).first()
-                if ab:
-                    s.add(AbnormalityRecord(lease_version_id=v.id, payload=ab.payload, model=ab.model))
+                print(f"[upload] PROCESS_INLINE=true; starting inline process_version for {v.id}")
+                process_version(v.id)
+                print(f"[upload] inline processing finished for {v.id}")
             except Exception:
+                print("[upload] inline processing failed", flush=True)
                 pass
-            # Set as current version by default for convenience
-            p = s.get(Project, project_id)
-            if p:
-                p.current_version_id = v.id
         else:
-            # Enqueue background processing
+            # Enqueue background processing; if enqueue fails, start a background thread
             try:
                 q = get_queue()
                 q.enqueue(process_version, v.id)
+                print(f"[upload] enqueued version {v.id} for processing")
             except Exception:
-                pass
+                try:
+                    import threading as _threading
+                    _threading.Thread(target=process_version, args=(v.id,), daemon=True).start()
+                    print(f"[upload] started background thread for processing {v.id}")
+                except Exception:
+                    print("[upload] failed to start background processing", flush=True)
+                    pass
+        # Set as current version by default for convenience
+        p = s.get(Project, project_id)
+        if p:
+            p.current_version_id = v.id
         s.flush()
         return LeaseVersionOut(id=v.id, project_id=v.project_id, label=v.label, status=v.status.value, created_at=v.created_at.isoformat() if v.created_at else None)
 
@@ -205,6 +295,39 @@ def get_version_status(version_id: str):
         v = s.get(LeaseVersion, version_id)
         if not v:
             return {"id": version_id, "status": "not_found"}
+        stage = None
+        progress = None
+        try:
+            conn = Redis()
+            data = conn.hgetall(f"version:{version_id}:status")
+            if data:
+                stage = (data.get(b"stage") or b"").decode() or None
+                val = (data.get(b"progress") or b"").decode()
+                progress = int(val) if val.isdigit() else None
+        except Exception:
+            pass
+        return VersionStatusResponse(
+            id=v.id,
+            status=v.status.value,
+            created_at=v.created_at.isoformat() if v.created_at else None,
+            updated_at=v.updated_at.isoformat() if v.updated_at else None,
+            stage=stage,
+            progress=progress,
+        )
+
+
+@app.post("/v1/versions/{version_id}/process", response_model=VersionStatusResponse)
+def process_version_inline(version_id: str):
+    # Manual trigger to process a version inline (useful if background worker is down)
+    with session_scope() as s:
+        v = s.get(LeaseVersion, version_id)
+        if not v:
+            return {"id": version_id, "status": "not_found"}
+        try:
+            process_version(version_id)
+        except Exception:
+            pass
+        # Report current status
         stage = None
         progress = None
         try:
@@ -298,7 +421,9 @@ def clauses_version(version_id: str, topic: str = Form(...)):
         pdf_path = str(_doc_dir(v.doc_id) / "lease.pdf")
         from backend.lease_chain import get_clauses_for_topic
         res = get_clauses_for_topic(pdf_path, topic)
-        return ClausesResponse(clauses=res)
+        # Return only the top 4 most relevant/closest clauses to keep UI concise
+        top = (res or [])[:4]
+        return ClausesResponse(clauses=top)
 
 
 from backend.diff import diff_pdfs
@@ -404,3 +529,44 @@ def healthz():
 @app.get("/version")
 def version():
     return {"version": APP_VERSION}
+
+
+@app.get("/v1/versions/{version_id}/debug", response_model=dict)
+def debug_version(version_id: str):
+    with session_scope() as s:
+        v = s.get(LeaseVersion, version_id)
+        if not v:
+            return {"id": version_id, "status": "not_found"}
+        cache_keys = list(_DOC_CACHE.keys())
+        return {
+            "id": v.id,
+            "project_id": v.project_id,
+            "label": v.label,
+            "status": v.status.value,
+            "doc_id": v.doc_id,
+            "content_hash": v.content_hash,
+            "file_url": v.file_url,
+            "cache_present": (v.doc_id in _DOC_CACHE) if v.doc_id else False,
+            "cache_keys": cache_keys,
+        }
+
+
+@app.post("/v1/versions/{version_id}/reload", response_model=dict)
+def reload_version_cache(version_id: str):
+    with session_scope() as s:
+        v = s.get(LeaseVersion, version_id)
+        if not v or not v.doc_id:
+            return {"ok": False}
+        try:
+            if v.doc_id in _DOC_CACHE:
+                del _DOC_CACHE[v.doc_id]
+            # Kick off background re-index to refresh caches
+            try:
+                q = get_queue()
+                q.enqueue(process_version, v.id)
+            except Exception:
+                import threading as _threading
+                _threading.Thread(target=process_version, args=(v.id,), daemon=True).start()
+            return {"ok": True}
+        except Exception:
+            return {"ok": False}

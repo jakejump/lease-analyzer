@@ -1,3 +1,24 @@
+from __future__ import annotations
+
+import shutil
+from pathlib import Path
+from backend.paths import _project_root
+
+
+def _storage_root() -> Path:
+    root = _project_root() / "temp" / "storage"
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def put_file(local_path: str | Path, relative_destination: str) -> str:
+    src = Path(local_path)
+    dst = _storage_root() / relative_destination
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy(src, dst)
+    # Return a pseudo-URL (file path) usable by the app
+    return str(dst)
+
 import os
 import shutil
 from pathlib import Path

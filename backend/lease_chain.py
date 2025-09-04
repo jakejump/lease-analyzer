@@ -54,6 +54,9 @@ def _doc_id_from_pdf_path(pdf_path: str | Path) -> str:
 def _chunks_path(doc_id: str) -> Path:
     return _doc_dir(doc_id) / "chunks.json"
 
+def _clauses_path(doc_id: str) -> Path:
+    return _doc_dir(doc_id) / "clauses.json"
+
 def _get_or_build_vectorstore_for_doc(doc_id: str) -> tuple[FAISS, List[Document]]:
     def _builder():
         pdf_path = str(_doc_dir(doc_id) / "lease.pdf")
@@ -63,6 +66,7 @@ def _get_or_build_vectorstore_for_doc(doc_id: str) -> tuple[FAISS, List[Document
 
 
 def extract_text_from_pdf(pdf_path: str) -> str:
+    print(f"[chain] extract_text_from_pdf start: {pdf_path}")
     # 1) Try lightweight direct PyPDF read first
     def _pypdf_direct(path: str) -> str:
         from pypdf import PdfReader
@@ -149,7 +153,9 @@ def extract_text_from_pdf(pdf_path: str) -> str:
                 if t:
                     text_chunks.append(t)
 
-        return "\n".join(text_chunks)
+        out = "\n".join(text_chunks)
+        print(f"[chain] OCR extracted {len(out)} chars")
+        return out
 
     # 3) Unstructured as a last resort (may try to fetch NLTK if missing)
     def _unstructured(path: str) -> str:
@@ -189,10 +195,48 @@ def extract_text_from_pdf(pdf_path: str) -> str:
     print("Falling back to Unstructured; this may attempt to use NLTK.")
     un_text = _unstructured(pdf_path)
     if un_text:
+        print(f"[chain] Unstructured extracted {len(un_text)} chars")
         return un_text
 
     raise RuntimeError("All PDF extraction methods failed or produced empty text.")
 
+
+def get_or_build_clauses_for_doc(doc_id: str) -> list[str]:
+    """Return clause-like segments for a document, cached on disk and in-memory.
+
+    Preference order:
+    - In-memory `_DOC_CACHE[doc_id]['clauses']`
+    - Sidecar file `<doc_dir>/clauses.json`
+    - Compute from extracted text once and persist
+    """
+    # In-memory
+    if doc_id in _DOC_CACHE and isinstance(_DOC_CACHE.get(doc_id), dict):
+        cached = _DOC_CACHE[doc_id]
+        if "clauses" in cached and isinstance(cached["clauses"], list):
+            return cached["clauses"]  # type: ignore[return-value]
+
+    path = _clauses_path(doc_id)
+    # Disk cache
+    try:
+        if path.exists():
+            data = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(data, list):
+                # Cache in-memory for the process lifetime
+                _DOC_CACHE.setdefault(doc_id, {})["clauses"] = data
+                return data
+    except Exception:
+        pass
+
+    # Compute and persist
+    pdf_path = str(_doc_dir(doc_id) / "lease.pdf")
+    text = extract_text_from_pdf(pdf_path)
+    clauses = split_into_paragraphs_or_clauses(text)
+    try:
+        path.write_text(json.dumps(clauses), encoding="utf-8")
+    except Exception:
+        pass
+    _DOC_CACHE.setdefault(doc_id, {})["clauses"] = clauses
+    return clauses
 
 def split_into_paragraphs_or_clauses(text: str) -> List[str]:
     # Normalize common OCR issues first (e.g., comma used as decimal separator between digits)
@@ -418,6 +462,7 @@ def _clean_page_text(text: str, header_set: set[str], footer_set: set[str]) -> s
     return "\n".join(cleaned).strip()
 
 def load_lease_docs(pdf_path: str) -> List[Document]:
+    print(f"[chain] load_lease_docs for: {pdf_path}")
     # Prefer PyMuPDF for higher-fidelity page extraction
     try:
         page_docs = PyMuPDFLoader(pdf_path).load()
@@ -446,6 +491,7 @@ def load_lease_docs(pdf_path: str) -> List[Document]:
                     meta["layout_titles"] = titles_by_page[page_num]
                 split_docs.append(Document(page_content=part, metadata=meta))
         if split_docs:
+            print(f"[chain] PyMuPDF produced {len(split_docs)} chunks")
             return split_docs
     except Exception as e:
         print("PyMuPDF page-aware load failed; trying PyPDFLoader:", e)
@@ -474,6 +520,7 @@ def load_lease_docs(pdf_path: str) -> List[Document]:
                         meta["layout_titles"] = titles_by_page[page_num]
                     split_docs.append(Document(page_content=part, metadata=meta))
             if split_docs:
+                print(f"[chain] PyPDFLoader produced {len(split_docs)} chunks")
                 return split_docs
         except Exception as e2:
             print("PyPDFLoader page-aware load failed; falling back to raw text:", e2)
@@ -485,10 +532,12 @@ def load_lease_docs(pdf_path: str) -> List[Document]:
     for i, para in enumerate(paragraphs):
         for j, part in enumerate(splitter.split_text(para)):
             split_docs.append(Document(page_content=part, metadata={"para_index": i, "chunk": j}))
+    print(f"[chain] Fallback paragraphs produced {len(split_docs)} chunks")
     return split_docs
 
 
 def _get_retriever(doc_id: str):
+    print(f"[chain] get retriever for {doc_id}")
     if doc_id in _DOC_CACHE and "retriever" in _DOC_CACHE[doc_id]:
         return _DOC_CACHE[doc_id]["retriever"]
     vs, docs = _get_or_build_vectorstore_for_doc(doc_id)
@@ -502,6 +551,7 @@ def _get_retriever(doc_id: str):
     return retriever
 
 def run_rag_pipeline(pdf_path: str, question: str):
+    print(f"[chain] RAG question: {question[:60]}... for {pdf_path}")
     doc_id = _doc_id_from_pdf_path(pdf_path)
     retriever = _get_retriever(doc_id)
 
@@ -531,7 +581,7 @@ def run_rag_pipeline(pdf_path: str, question: str):
 
 
 def evaluate_general_risks(pdf_path: str):
-    print("🔍 Starting risk evaluation...")
+    print(f"[chain] risk evaluation start for {pdf_path}")
     doc_id = _doc_id_from_pdf_path(pdf_path)
     retriever = _get_retriever(doc_id)
 
@@ -621,6 +671,7 @@ def evaluate_general_risks(pdf_path: str):
     )
 
     raw_output = chain.invoke("Evaluate the lease risks.")
+    print(f"[chain] risk llm responded {len(str(raw_output))} chars")
 
     try:
         cleaned = raw_output.strip()
@@ -631,7 +682,7 @@ def evaluate_general_risks(pdf_path: str):
         print("risks", result)
         return result
     except Exception as e:
-        print("⚠️ LLM returned invalid JSON:\n", raw_output)
+        print("[chain] invalid JSON in risk output; returning fallback")
         return {
             "termination_risk": {"score": None, "explanation": "Could not parse response."},
             "financial_exposure": {"score": None, "explanation": "Could not parse response."},
@@ -642,6 +693,7 @@ def evaluate_general_risks(pdf_path: str):
         }
         
 def detect_abnormalities(pdf_path: str):
+    print(f"[chain] abnormalities start for {pdf_path}")
     doc_id = _doc_id_from_pdf_path(pdf_path)
     retriever = _get_retriever(doc_id)
 
@@ -674,7 +726,7 @@ def detect_abnormalities(pdf_path: str):
     )
 
     result = chain.invoke("Identify abnormalities with impact for landlord.")
-    print(result)
+    print(f"[chain] abnormalities llm responded {len(str(result))} chars")
     def _robust_parse(text: str):
         cleaned = text.strip()
         # Strip common code fences
@@ -740,11 +792,12 @@ def get_clauses_for_topic(pdf_path: str, topic: str):
 
     similarities = cosine_similarity([topic_embedding], stored_embeddings)[0]
     doc_scores = list(zip(stored_docs, similarities))
+    # Sort all candidates by similarity descending
+    doc_scores.sort(key=lambda x: x[1], reverse=True)
 
-    threshold = 0.65
-    filtered = [(doc, score) for doc, score in doc_scores if score >= threshold]
-    if not filtered:
-        filtered = sorted(doc_scores, key=lambda x: x[1], reverse=True)[:3]
+    # Take a broader candidate set for LLM re-ranking
+    CANDIDATE_K = 12
+    candidates = doc_scores[:CANDIDATE_K]
 
     def _format_clause(raw_text: str, meta: dict | None = None) -> str:
         import re as _re
@@ -841,9 +894,79 @@ def get_clauses_for_topic(pdf_path: str, topic: str):
             parts.append(tail)
         return parts or [text]
 
-    formatted: list[str] = []
-    for doc, _score in filtered:
+    # Build formatted clause candidates from the top chunks
+    candidate_texts: list[str] = []
+    for doc, _score in candidates:
         meta = getattr(doc, "metadata", {})
         for segment in _split_inline_headers(doc.page_content):
-            formatted.append(_format_clause(segment, meta))
-    return formatted
+            if not segment or len(segment.strip()) < 40:
+                continue
+            candidate_texts.append(_format_clause(segment, meta))
+            if len(candidate_texts) >= CANDIDATE_K:
+                break
+        if len(candidate_texts) >= CANDIDATE_K:
+            break
+
+    # Fallback if nothing reasonable
+    if not candidate_texts:
+        return []
+
+    # LLM re-rank: ask to pick the best 4 in order (most relevant first)
+    TOP_K = 4
+    try:
+        llm = ChatOpenAI(model="gpt-4o", temperature=0)
+        from textwrap import shorten
+        lines = []
+        for i, txt in enumerate(candidate_texts):
+            # Keep messages compact; the model still sees full content below
+            _san = txt.replace("\n", " ")
+            _sh = shorten(_san, width=240, placeholder='…')
+            lines.append(f"{i}: {_sh}")
+        SYSTEM = (
+            "You are ranking lease clauses for relevance to a user's topic. "
+            "Return ONLY JSON: an array of 4 integer indices (0-based) of the most relevant clauses, "
+            "ordered from most to least relevant. No commentary."
+        )
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", SYSTEM),
+            ("human", (
+                "Topic: {topic}\n\n"
+                "Clauses (index: text):\n{candidates}\n\n"
+                "Return JSON array of 4 indices only."
+            )),
+        ])
+        chain = prompt | llm | StrOutputParser()
+        raw = chain.invoke({"topic": topic, "candidates": "\n".join(lines)})
+        def _parse_indices(s: str) -> list[int]:
+            t = s.strip()
+            if t.startswith("```json") and t.endswith("```"):
+                t = t.removeprefix("```json").removesuffix("```").strip()
+            import json as _json
+            try:
+                arr = _json.loads(t)
+            except Exception:
+                # try bracket extraction
+                a, b = t.find("["), t.rfind("]")
+                if a != -1 and b != -1 and b > a:
+                    arr = _json.loads(t[a:b+1])
+                else:
+                    raise
+            out = []
+            for v in arr:
+                try:
+                    out.append(int(v))
+                except Exception:
+                    pass
+            return out[:TOP_K]
+        idxs = _parse_indices(raw)
+        if len(idxs) < TOP_K:
+            # fill with highest-similarity order as fallback
+            idxs = (idxs + list(range(len(candidate_texts))))[:TOP_K]
+        ranked = [candidate_texts[i] for i in idxs if 0 <= i < len(candidate_texts)]
+        if ranked:
+            return ranked[:TOP_K]
+    except Exception as e:
+        print("[clauses] rerank failed:", e)
+
+    # Hard fallback: use similarity order top-k
+    return candidate_texts[:TOP_K]

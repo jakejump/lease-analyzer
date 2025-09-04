@@ -1,3 +1,71 @@
+from __future__ import annotations
+
+from pydantic import BaseModel
+from typing import Any
+
+
+class UploadResponse(BaseModel):
+    message: str
+    doc_id: str | None = None
+    risks: dict[str, Any] | None = None
+
+
+class AskResponse(BaseModel):
+    answer: str
+
+
+class AbnormalitiesResponse(BaseModel):
+    abnormalities: list[dict[str, str] | str]
+
+
+class ClausesResponse(BaseModel):
+    clauses: list[str]
+
+
+class ProjectCreate(BaseModel):
+    name: str
+    description: str | None = None
+
+
+class ProjectOut(BaseModel):
+    id: str
+    name: str
+    description: str | None = None
+    current_version_id: str | None = None
+
+
+class VersionCreate(BaseModel):
+    label: str | None = None
+
+
+class LeaseVersionOut(BaseModel):
+    id: str
+    project_id: str
+    label: str | None = None
+    status: str
+    created_at: str | None = None
+
+
+class VersionStatusResponse(BaseModel):
+    id: str
+    status: str
+    created_at: str | None = None
+    updated_at: str | None = None
+    stage: str | None = None
+    progress: int | None = None
+
+
+class RiskOut(BaseModel):
+    payload: dict
+    model: str | None = None
+    created_at: str | None = None
+
+
+class AbnormalitiesOut(BaseModel):
+    payload: list
+    model: str | None = None
+    created_at: str | None = None
+
 from typing import Dict, List, Optional, Literal
 from pydantic import BaseModel, Field
 
